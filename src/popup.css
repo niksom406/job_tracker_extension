@@ -181,6 +181,12 @@ html, body {
   gap: 8px;
 }
 
+.sync-actions {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+}
+
 .btn-sync {
   width: 100%;
   height: 44px;
@@ -200,6 +206,24 @@ html, body {
   box-shadow: 0 4px 20px rgba(99,102,241,0.35);
   letter-spacing: -0.01em;
 }
+
+.sync-actions .btn-sync { flex: 1; }
+
+.btn-stop-sync {
+  height: 44px;
+  padding: 0 14px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-sm);
+  color: #fca5a5;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-stop-sync:hover { background: rgba(239, 68, 68, 0.2); }
+.btn-stop-sync:disabled { opacity: 0.6; cursor: wait; }
 
 .btn-sync:hover {
   transform: translateY(-1px);
