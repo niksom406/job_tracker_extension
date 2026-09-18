@@ -10,6 +10,17 @@ function send(msg: AppMessage): Promise<AppResponse> {
   });
 }
 
+// startDate is stored as the UTC instant of local midnight. Slicing that ISO
+// string directly reads the UTC calendar day, which is the wrong day in any
+// timezone ahead of UTC. Convert back through local getters instead.
+function toLocalDateInputValue(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 
 const gmailStatusBadge   = document.getElementById('gmail-status-badge')!;
@@ -120,7 +131,7 @@ async function loadSettings() {
       }
 
       if (storage.startDate) {
-        startDateInput.value = storage.startDate.slice(0, 10);
+        startDateInput.value = toLocalDateInputValue(storage.startDate);
       } else {
         // Do not silently choose a date. The date input remains fully editable
         // and an empty value intentionally means "sync all available mail".

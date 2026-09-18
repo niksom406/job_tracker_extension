@@ -172,6 +172,12 @@ body {
   position: relative;
 }
 
+#view-applications {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .topbar {
   display: flex;
   align-items: center;
