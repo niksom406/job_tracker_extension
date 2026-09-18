@@ -1,0 +1,16 @@
+{
+  "name": "job-tracker-extension",
+  "version": "1.0.0",
+  "description": "Chrome extension to automatically track job applications from Gmail using AI",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js --watch",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.0"
+  }
+}

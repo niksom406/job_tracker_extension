@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JobTracker — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <rect x="2" y="7" width="20" height="14" rx="2" fill="url(#dlg1)"/>
+          <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" stroke="url(#dlg2)" stroke-width="2" stroke-linecap="round"/>
+          <defs>
+            <linearGradient id="dlg1" x1="2" y1="7" x2="22" y2="21" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#6366f1"/><stop offset="1" stop-color="#818cf8"/>
+            </linearGradient>
+            <linearGradient id="dlg2" x1="8" y1="5" x2="16" y2="7" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#818cf8"/><stop offset="1" stop-color="#a5b4fc"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <span class="logo-text">JobTracker</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" id="nav-all" data-filter="all">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        All Applications
+        <span class="nav-badge" id="badge-all">0</span>
+      </a>
+      <a href="#" class="nav-item" id="nav-applied" data-filter="applied">
+        <span class="nav-dot applied"></span>Applied
+        <span class="nav-badge applied-badge" id="badge-applied">0</span>
+      </a>
+      <a href="#" class="nav-item" id="nav-interview" data-filter="interview">
+        <span class="nav-dot interview"></span>Interviews
+        <span class="nav-badge interview-badge" id="badge-interview">0</span>
+      </a>
+      <a href="#" class="nav-item" id="nav-assessment" data-filter="assessment">
+        <span class="nav-dot assessment"></span>Assessments
+        <span class="nav-badge assessment-badge" id="badge-assessment">0</span>
+      </a>
+      <a href="#" class="nav-item" id="nav-offer" data-filter="offer">
+        <span class="nav-dot offer"></span>Offers
+        <span class="nav-badge offer-badge" id="badge-offer">0</span>
+      </a>
+      <a href="#" class="nav-item" id="nav-rejected" data-filter="rejected">
+        <span class="nav-dot rejected"></span>Rejected
+        <span class="nav-badge rejected-badge" id="badge-rejected">0</span>
+      </a>
+
+      <div class="nav-divider"></div>
+
+      <!-- Graphs tab -->
+      <a href="#" class="nav-item" id="nav-graphs" data-view="graphs">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Analytics
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="#" id="sidebar-settings" class="sidebar-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 0-1.41-1.42M4.93 4.93a10 10 0 0 0-1.42 1.41M4.93 19.07a10 10 0 0 0 1.41 1.42M19.07 19.07a10 10 0 0 0 1.42-1.41"/></svg>
+        Settings
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main">
+    <!-- ── Applications view ─────────────────────────────────────────────── -->
+    <div id="view-applications">
+      <!-- Top bar -->
+      <div class="topbar">
+        <div class="topbar-left">
+          <h1 class="page-title" id="page-title">All Applications</h1>
+          <span class="total-count" id="total-count">Loading…</span>
+        </div>
+        <div class="topbar-right">
+          <div class="search-wrap">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" id="search-input" class="search-input" placeholder="Search company or role…" />
+          </div>
+          <button class="btn-sync-top" id="btn-sync-top">
+            <svg id="sync-spinner-top" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 0 1-9 9M3 12a9 9 0 0 1 9-9"/><path d="M21 12l-3-3m3 3l-3 3"/></svg>
+            Sync
+          </button>
+        </div>
+      </div>
+
+      <!-- Loading / Empty states -->
+      <div id="state-loading" class="center-state">
+        <div class="spinner"></div>
+        <p>Loading your applications…</p>
+      </div>
+
+      <div id="state-empty" class="center-state" style="display:none">
+        <div class="empty-icon">📭</div>
+        <p class="empty-title">No applications found</p>
+        <p class="empty-sub">Try syncing your inbox or adjusting the filter.</p>
+      </div>
+
+      <!-- Table -->
+      <div id="table-wrap" style="display:none">
+        <table class="app-table">
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Date</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Status bar -->
+      <div class="status-bar" id="status-bar" style="display:none">
+        <span id="status-bar-text"></span>
+      </div>
+    </div>
+
+    <!-- ── Graphs / Analytics view ───────────────────────────────────────── -->
+    <div id="view-graphs" style="display:none">
+      <div class="topbar">
+        <div class="topbar-left">
+          <h1 class="page-title">Analytics</h1>
+          <span class="total-count" id="graphs-subtitle">Your job search insights</span>
+        </div>
+        <div class="topbar-right">
+          <button class="btn-sync-top" id="btn-refresh-graphs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 0 1-9 9M3 12a9 9 0 0 1 9-9"/><path d="M21 12l-3-3m3 3l-3 3"/></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Cost summary bar -->
+      <div class="cost-summary-bar" id="cost-summary-bar">
+        <div class="cost-stat">
+          <span class="cost-stat-value" id="stat-total-tokens">—</span>
+          <span class="cost-stat-label">Total tokens used</span>
+        </div>
+        <div class="cost-stat-divider"></div>
+        <div class="cost-stat">
+          <span class="cost-stat-value" id="stat-total-emails">—</span>
+          <span class="cost-stat-label">Emails classified</span>
+        </div>
+        <div class="cost-stat-divider"></div>
+        <div class="cost-stat">
+          <span class="cost-stat-value" id="stat-cost">—</span>
+          <span class="cost-stat-label">Estimated cost (USD)</span>
+        </div>
+        <div class="cost-stat-divider"></div>
+        <div class="cost-stat">
+          <span class="cost-stat-value" id="stat-per-email">—</span>
+          <span class="cost-stat-label">Avg tokens / email</span>
+        </div>
+      </div>
+
+      <!-- 4 charts grid -->
+      <div class="charts-grid">
+        <!-- Chart 1: Applications over time -->
+        <div class="chart-card" id="chart-card-1">
+          <div class="chart-header">
+            <div>
+              <h3 class="chart-title">Applications Over Time</h3>
+              <p class="chart-sub">Emails classified per day</p>
+            </div>
+            <div class="chart-icon chart-icon-indigo">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+          </div>
+          <canvas id="canvas-timeline" class="chart-canvas"></canvas>
+          <div class="chart-empty" id="chart-empty-1" style="display:none">No data yet — sync your inbox first</div>
+        </div>
+
+        <!-- Chart 2: Status breakdown donut -->
+        <div class="chart-card" id="chart-card-2">
+          <div class="chart-header">
+            <div>
+              <h3 class="chart-title">Application Status</h3>
+              <p class="chart-sub">Breakdown by current status</p>
+            </div>
+            <div class="chart-icon chart-icon-violet">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+            </div>
+          </div>
+          <div class="donut-wrap">
+            <canvas id="canvas-status" class="chart-canvas-donut"></canvas>
+            <div class="donut-legend" id="donut-legend"></div>
+          </div>
+          <div class="chart-empty" id="chart-empty-2" style="display:none">No data yet — sync your inbox first</div>
+        </div>
+
+        <!-- Chart 3: Token usage over time -->
+        <div class="chart-card" id="chart-card-3">
+          <div class="chart-header">
+            <div>
+              <h3 class="chart-title">Token Usage Over Time</h3>
+              <p class="chart-sub">gpt-4o-mini tokens consumed per day</p>
+            </div>
+            <div class="chart-icon chart-icon-amber">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+          </div>
+          <canvas id="canvas-tokens" class="chart-canvas"></canvas>
+          <div class="chart-empty" id="chart-empty-3" style="display:none">Token usage will appear after first sync</div>
+        </div>
+
+        <!-- Chart 4: Top companies bar -->
+        <div class="chart-card" id="chart-card-4">
+          <div class="chart-header">
+            <div>
+              <h3 class="chart-title">Top Companies</h3>
+              <p class="chart-sub">Most frequent in your applications</p>
+            </div>
+            <div class="chart-icon chart-icon-green">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="4" height="18" rx="1"/><rect x="9" y="8" width="4" height="13" rx="1"/><rect x="16" y="13" width="4" height="8" rx="1"/></svg>
+            </div>
+          </div>
+          <canvas id="canvas-companies" class="chart-canvas"></canvas>
+          <div class="chart-empty" id="chart-empty-4" style="display:none">No data yet — sync your inbox first</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Email detail panel -->
+  <aside class="detail-panel" id="detail-panel">
+    <div class="detail-header">
+      <div>
+        <h2 class="detail-company" id="detail-company">Company Name</h2>
+        <p class="detail-role" id="detail-role">Role Title</p>
+      </div>
+      <button class="close-btn" id="detail-close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="detail-meta">
+      <span class="status-badge" id="detail-status-badge">Applied</span>
+      <span class="detail-date" id="detail-date"></span>
+    </div>
+    <div class="detail-subject" id="detail-subject"></div>
+    <div class="detail-body-wrap">
+      <div id="detail-body-loading" class="body-loading">
+        <div class="spinner sm"></div> Loading email…
+      </div>
+      <pre id="detail-body" class="detail-body" style="display:none"></pre>
+    </div>
+  </aside>
+
+  <script type="module" src="../dist/dashboard.js"></script>
+</body>
+</html>

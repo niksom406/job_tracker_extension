@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "JobTracker — AI Gmail Job Tracker",
+  "short_name": "JobTracker",
+  "version": "1.0.0",
+  "description": "Automatically track your job applications from Gmail using AI. No server. Private. Free.",
+  "permissions": [
+    "identity",
+    "storage",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://gmail.googleapis.com/*",
+    "https://www.googleapis.com/*",
+    "https://api.openai.com/*"
+  ],
+  "oauth2": {
+    "client_id": "320165629217-u8halm6ijdfd5frjk4ehbq3ug1k5ea5r.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    },
+    "default_title": "JobTracker"
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/dashboard.html",
+        "src/settings.html"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}
