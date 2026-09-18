@@ -39,6 +39,8 @@ export interface StorageData {
   // Token / cost analytics
   totalTokensUsed?: number;
   dailyTokenRecords?: DailyTokenRecord[];
+  // Live progress of the current sync, shared with every open popup/dashboard
+  syncStatus?: SyncStatus;
 }
 
 // ─── AI Classification ──────────────────────────────────────────────────────
@@ -71,10 +73,26 @@ export interface DailyTokenRecord {
 export interface AnalyticsData {
   totalTokens: number;
   totalEmails: number;
-  estimatedCostUsd: number;
   dailyRecords: DailyTokenRecord[];
   applicationsByDate: Record<string, number>;  // YYYY-MM-DD → count
   statusBreakdown: Record<string, number>;
+}
+
+// ─── Sync progress / setup ───────────────────────────────────────────────────
+
+export interface SyncStatus {
+  running: boolean;
+  startedAt?: string;
+  processed: number;       // emails fetched + classified so far this run
+  newApplications: number; // saved so far this run
+  total: number;           // emails in the window still to be checked
+}
+
+export interface SetupStatus {
+  gmail: boolean;
+  openAiKey: boolean;
+  startDate: boolean;
+  labels: boolean;
 }
 
 // ─── UI Stats ───────────────────────────────────────────────────────────────
@@ -90,6 +108,9 @@ export interface StatsData {
   startDate?: string;
   isConnected: boolean;
   userEmail?: string;
+  syncStatus: SyncStatus;
+  setup: SetupStatus;
+  setupComplete: boolean;
 }
 
 // ─── Gmail API ──────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
-import type { AppMessage, AppResponse, Application, AnalyticsData, StatsData } from './lib/types';
+import type { AppMessage, AppResponse, Application, AnalyticsData, StatsData, SyncStatus, SetupStatus } from './lib/types';
+import { SETUP_STEPS } from './lib/setup';
 
 // ─── Messaging ────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,9 @@ let allApps: Application[] = [];
 let currentFilter: string = 'all';
 let searchQuery: string = '';
 let selectedId: string | null = null;
+let setupComplete = false;
+let syncInitiatedHere = false;
+let lastKnownRunning = false;
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 
@@ -29,6 +33,8 @@ const tableBody     = document.getElementById('table-body')!;
 const searchInput   = document.getElementById('search-input') as HTMLInputElement;
 const totalCount    = document.getElementById('total-count')!;
 const syncMeta      = document.getElementById('sync-meta')!;
+const setupBanner   = document.getElementById('setup-banner')!;
+const setupList     = document.getElementById('setup-list')!;
 const pageTitle     = document.getElementById('page-title')!;
 const statusBar     = document.getElementById('status-bar')!;
 const statusBarText = document.getElementById('status-bar-text')!;
@@ -232,12 +238,19 @@ function setFilter(filter: string) {
 // ─── Sync ─────────────────────────────────────────────────────────────────────
 
 async function runSync() {
+  if (!setupComplete) {
+    setStatusBar('Finish the setup steps above before syncing.', 'error');
+    return;
+  }
+
+  syncInitiatedHere = true;
   setSyncing(true);
   setStatusBar('Syncing inbox…', 'info');
 
   const res = await send({ type: 'SYNC' });
 
   setSyncing(false);
+  syncInitiatedHere = false;
 
   if (!res.success) {
     setStatusBar(res.error, 'error');
@@ -263,7 +276,8 @@ async function runSync() {
 }
 
 function setSyncing(syncing: boolean) {
-  btnSyncTop.disabled = syncing;
+  btnSyncTop.disabled = syncing || !setupComplete;
+  btnSyncTop.title = setupComplete ? '' : 'Finish setup before syncing';
   syncSpinTop.style.animation = syncing ? 'spin 1s linear infinite' : '';
   btnStopSyncTop.style.display = syncing ? 'block' : 'none';
   btnStopSyncTop.disabled = false;
@@ -292,7 +306,7 @@ async function loadApps() {
   allApps = res.data as Application[];
   renderBadges();
   renderTable();
-  await renderSyncMeta();
+  await renderSyncState();
 }
 
 function formatDateTime(iso: string): string {
@@ -301,17 +315,67 @@ function formatDateTime(iso: string): string {
   });
 }
 
-async function renderSyncMeta() {
+function renderSetup(setup: SetupStatus, complete: boolean) {
+  setupBanner.style.display = complete ? 'none' : 'flex';
+  setupList.innerHTML = SETUP_STEPS
+    .map((step) => {
+      const done = setup[step.key];
+      return `<li class="${done ? 'done' : 'todo'}">${done ? '✓' : '○'} ${step.label}</li>`;
+    })
+    .join('');
+}
+
+// Mirror a sync's progress whether it was started here, in the popup, or in
+// another dashboard tab — the background publishes it to storage for everyone.
+function applySyncStatus(s: SyncStatus) {
+  setSyncing(s.running);
+  if (!s.running || syncInitiatedHere) return;
+  const found = s.newApplications > 0 ? `, ${s.newApplications} new so far` : '';
+  setStatusBar(`Sync in progress — ${s.processed}/${s.total} emails checked${found}`, 'info');
+}
+
+async function renderSyncState() {
   const res = await send({ type: 'GET_STATS' });
   if (!res.success) return;
 
-  const { lastCheckAt, startDate } = res.data as StatsData;
-  const from = lastCheckAt ?? startDate;
+  const data = res.data as StatsData;
+  setupComplete = data.setupComplete;
+  renderSetup(data.setup, data.setupComplete);
+
+  const from = data.lastCheckAt ?? data.startDate;
   syncMeta.textContent = [
-    lastCheckAt ? `Last synced ${formatDateTime(lastCheckAt)}` : 'Never synced',
-    from ? `next sync checks mail after ${formatDateTime(from)}` : 'next sync checks all inbox mail',
-  ].join(' · ');
+    data.lastCheckAt ? `Last synced ${formatDateTime(data.lastCheckAt)}` : 'Never synced',
+    data.startDate ? `start date ${formatDate(data.startDate)}` : 'no start date set',
+    from ? `next sync checks mail after ${formatDateTime(from)}` : '',
+  ].filter(Boolean).join(' · ');
+
+  lastKnownRunning = data.syncStatus.running;
+  applySyncStatus(data.syncStatus);
 }
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.syncStatus) return;
+  const s = changes.syncStatus.newValue as SyncStatus | undefined;
+  if (!s) return;
+
+  if (s.running) {
+    lastKnownRunning = true;
+    applySyncStatus(s);
+    return;
+  }
+
+  const justFinished = lastKnownRunning;
+  lastKnownRunning = false;
+  if (syncInitiatedHere) return; // runSync reports its own result
+
+  if (justFinished) {
+    setStatusBar(
+      `✅ Sync finished — ${s.newApplications} new application${s.newApplications !== 1 ? 's' : ''}`,
+      'success'
+    );
+  }
+  loadApps();
+});
 
 // ─── Chart rendering ──────────────────────────────────────────────────────────
 
@@ -586,8 +650,6 @@ async function loadGraphs() {
   // Update cost summary
   document.getElementById('stat-total-tokens')!.textContent = data.totalTokens.toLocaleString();
   document.getElementById('stat-total-emails')!.textContent = data.totalEmails.toLocaleString();
-  document.getElementById('stat-cost')!.textContent =
-    data.estimatedCostUsd < 0.01 ? `< $0.01` : `$${data.estimatedCostUsd.toFixed(3)}`;
   const avgTokens = data.totalEmails > 0 ? Math.round(data.totalTokens / data.totalEmails) : 0;
   document.getElementById('stat-per-email')!.textContent = avgTokens.toLocaleString();
 
@@ -657,10 +719,12 @@ document.querySelectorAll('.nav-item').forEach((el) => {
   });
 });
 
-document.getElementById('sidebar-settings')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  chrome.tabs.create({ url: chrome.runtime.getURL('src/settings.html') });
-});
+for (const id of ['sidebar-settings', 'setup-banner-link']) {
+  document.getElementById(id)?.addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/settings.html') });
+  });
+}
 
 document.getElementById('btn-refresh-graphs')?.addEventListener('click', () => {
   loadGraphs();

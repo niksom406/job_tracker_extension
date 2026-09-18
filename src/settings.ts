@@ -94,8 +94,10 @@ function setGmailStatus(connected: boolean, email?: string) {
   gmailConnectedInfo.style.display = connected ? 'flex' : 'none';
   if (email) gmailEmailDisplay.textContent = email;
 
-  btnConnectGmail.style.display = connected ? 'none' : 'flex';
-  btnDisconnectGmail.style.display = connected ? 'flex' : 'none';
+  // Empty string defers to the stylesheet so each button keeps its own
+  // display/alignment rules instead of a forced block-level flex box.
+  btnConnectGmail.style.display = connected ? 'none' : '';
+  btnDisconnectGmail.style.display = connected ? '' : 'none';
 }
 
 function setOpenAiStatus(hasKey: boolean) {
@@ -133,8 +135,8 @@ async function loadSettings() {
       if (storage.startDate) {
         startDateInput.value = toLocalDateInputValue(storage.startDate);
       } else {
-        // Do not silently choose a date. The date input remains fully editable
-        // and an empty value intentionally means "sync all available mail".
+        // Never pre-fill a guess: the user must pick the date deliberately,
+        // since it decides how much mail the first sync classifies (and costs).
         startDateInput.value = '';
       }
 
@@ -229,26 +231,7 @@ btnSaveKey.addEventListener('click', async () => {
 btnSaveDate.addEventListener('click', async () => {
   const val = startDateInput.value;
   if (!val) {
-    const stored = await new Promise<Partial<StorageData>>((resolve) =>
-      chrome.storage.local.get(['startDate', 'lastCheckAt'], (data) => resolve(data))
-    );
-
-    // Saving an empty field means "sync all mail". If nothing is stored there is
-    // nothing to undo, and removing lastCheckAt anyway would throw away sync
-    // progress and make the next run re-classify the whole mailbox.
-    if (!stored.startDate && !stored.lastCheckAt) {
-      showToast('No start date set — the next sync will search all mail.', 'info');
-      return;
-    }
-
-    await new Promise<void>((resolve, reject) =>
-      chrome.storage.local.remove(['startDate', 'lastCheckAt'], () => {
-        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-        else resolve();
-      })
-    );
-    showToast('Start date cleared. The next sync will search all mail.', 'info');
-    await loadSettings();
+    showToast('Pick a start date — sync won\'t run without one.', 'error');
     return;
   }
 

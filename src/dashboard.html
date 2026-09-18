@@ -100,6 +100,13 @@
         </div>
       </div>
 
+      <!-- Setup checklist — shown until all four steps are done -->
+      <div class="setup-banner" id="setup-banner" style="display:none">
+        <span class="setup-banner-title">Finish setup before syncing</span>
+        <ul class="setup-list" id="setup-list"></ul>
+        <a href="#" class="setup-banner-link" id="setup-banner-link">Open Settings →</a>
+      </div>
+
       <!-- Loading / Empty states -->
       <div id="state-loading" class="center-state">
         <div class="spinner"></div>
@@ -159,11 +166,6 @@
         <div class="cost-stat">
           <span class="cost-stat-value" id="stat-total-emails">—</span>
           <span class="cost-stat-label">Emails classified</span>
-        </div>
-        <div class="cost-stat-divider"></div>
-        <div class="cost-stat">
-          <span class="cost-stat-value" id="stat-cost">—</span>
-          <span class="cost-stat-label">Estimated cost (USD)</span>
         </div>
         <div class="cost-stat-divider"></div>
         <div class="cost-stat">
