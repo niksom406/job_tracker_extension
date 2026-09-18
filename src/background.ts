@@ -121,7 +121,7 @@ async function runSync(): Promise<SyncResult> {
   }
 
   console.log('[JobTracker] Sync query:', query);
-  const messageIds = await listMessageIds(token, query, 300);
+  const messageIds = await listMessageIds(token, query, 1000);
   console.log(`[JobTracker] ${messageIds.length} messages to check`);
 
   for (const id of messageIds) {
@@ -144,13 +144,26 @@ async function runSync(): Promise<SyncResult> {
 
       result.processed++;
 
-      // Classify with OpenAI (still needed for company/role extraction)
-      const classification = await classifyEmail(storage.openAiKey!, subject, snippet);
-
-      // Track token usage
-      if (classification.tokensUsed > 0) {
-        result.tokensUsed = (result.tokensUsed ?? 0) + classification.tokensUsed;
-        await recordTokenUsage(classification.tokensUsed);
+      let classification;
+      
+      if (existingStatus) {
+        // Skip OpenAI entirely to save tokens and time for historically labeled emails
+        classification = {
+          isJobRelated: true,
+          status: existingStatus,
+          company: 'Unknown Company',
+          role: 'Unknown Role',
+          tokensUsed: 0
+        };
+      } else {
+        // Classify with OpenAI for new inbox emails
+        classification = await classifyEmail(storage.openAiKey!, subject, snippet);
+        
+        // Track token usage
+        if (classification.tokensUsed > 0) {
+          result.tokensUsed = (result.tokensUsed ?? 0) + classification.tokensUsed;
+          await recordTokenUsage(classification.tokensUsed);
+        }
       }
 
       if (!existingStatus && !classification.isJobRelated) {
