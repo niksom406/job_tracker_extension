@@ -1,4 +1,4 @@
-import type { AppMessage, AppResponse, SyncResult, StatsData, AnalyticsData, DailyTokenRecord } from './lib/types';
+import type { AppMessage, AppResponse, SyncResult, StatsData, AnalyticsData, DailyTokenRecord, JobStatus } from './lib/types';
 import {
   getStorage,
   setStorage,
@@ -17,7 +17,7 @@ import {
   extractBody,
 } from './lib/gmail';
 import { classifyEmail } from './lib/openai';
-import { bootstrapLabels, getLabelId } from './lib/labels';
+import { bootstrapLabels, getLabelId, getAllLabelNames } from './lib/labels';
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -91,9 +91,18 @@ async function runSync(): Promise<SyncResult> {
     throw new Error('Gmail session expired. Reconnect in Settings.');
   }
 
-  // Build Gmail search query
+  // Build Gmail search query. We search two things:
+  //  1. recent inbox mail, to catch new applications
+  //  2. anything already carrying one of our Job/* labels, so emails labeled by
+  //     a previous install (or archived out of the inbox) still get imported
+  //     into local storage instead of silently vanishing from the dashboard.
+  const labelQuery = getAllLabelNames()
+    .map((name) => `label:"${name}"`)
+    .join(' OR ');
+    
+  let query = `(in:inbox) OR (${labelQuery})`;
+
   const since = storage.lastCheckAt ?? storage.startDate;
-  let query = 'in:inbox';
   if (since) {
     const d = new Date(since);
     const formatted = [
@@ -101,7 +110,14 @@ async function runSync(): Promise<SyncResult> {
       String(d.getMonth() + 1).padStart(2, '0'),
       String(d.getDate()).padStart(2, '0'),
     ].join('/');
-    query += ` after:${formatted}`;
+    query = `(${query}) after:${formatted}`;
+  }
+
+  // Reverse lookup so we can trust an email's *current* Gmail label as the
+  // source of truth for its status, rather than re-guessing with OpenAI.
+  const labelIdToStatus = new Map<string, JobStatus>();
+  for (const [status, labelId] of Object.entries(storage.labelMap)) {
+    if (labelId) labelIdToStatus.set(labelId, status as JobStatus);
   }
 
   console.log('[JobTracker] Sync query:', query);
@@ -121,9 +137,14 @@ async function runSync(): Promise<SyncResult> {
         ? new Date(dateHeader).toISOString()
         : new Date(parseInt(msg.internalDate, 10)).toISOString();
 
+      // Already labeled from a previous sync/install? Trust that status.
+      const existingStatus = msg.labelIds
+        ?.map((lid) => labelIdToStatus.get(lid))
+        .find((s): s is JobStatus => s !== undefined);
+
       result.processed++;
 
-      // Classify with OpenAI
+      // Classify with OpenAI (still needed for company/role extraction)
       const classification = await classifyEmail(storage.openAiKey!, subject, snippet);
 
       // Track token usage
@@ -132,15 +153,19 @@ async function runSync(): Promise<SyncResult> {
         await recordTokenUsage(classification.tokensUsed);
       }
 
-      if (!classification.isJobRelated) {
+      if (!existingStatus && !classification.isJobRelated) {
         console.log(`[JobTracker] Not job-related: "${subject}"`);
         continue;
       }
 
-      // Apply Gmail label
-      const labelId = getLabelId(storage.labelMap, classification.status);
-      if (labelId) {
-        await applyLabel(token, id, labelId);
+      const status = existingStatus ?? classification.status;
+
+      // Apply Gmail label (skip if it's already labeled)
+      if (!existingStatus) {
+        const labelId = getLabelId(storage.labelMap, status);
+        if (labelId) {
+          await applyLabel(token, id, labelId);
+        }
       }
 
       // Persist to chrome.storage
@@ -149,7 +174,7 @@ async function runSync(): Promise<SyncResult> {
         threadId: msg.threadId,
         company: classification.company,
         role: classification.role,
-        status: classification.status,
+        status,
         emailDate,
         subject,
         snippet,
@@ -185,9 +210,13 @@ async function buildAnalytics(): Promise<AnalyticsData> {
   const companyMap: Record<string, number> = {};
 
   for (const app of apps) {
-    const day = app.emailDate.slice(0, 10);
-    applicationsByDate[day] = (applicationsByDate[day] ?? 0) + 1;
-    statusBreakdown[app.status] = (statusBreakdown[app.status] ?? 0) + 1;
+    if (typeof app.emailDate === 'string') {
+      const day = app.emailDate.slice(0, 10);
+      applicationsByDate[day] = (applicationsByDate[day] ?? 0) + 1;
+    }
+    if (app.status) {
+      statusBreakdown[app.status] = (statusBreakdown[app.status] ?? 0) + 1;
+    }
     if (app.company && app.company !== 'Unknown Company') {
       companyMap[app.company] = (companyMap[app.company] ?? 0) + 1;
     }
