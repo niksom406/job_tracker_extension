@@ -529,7 +529,10 @@ function drawBarChart(canvasId: string, emptyId: string, labels: string[], value
 
 async function loadGraphs() {
   const res = await send({ type: 'GET_ANALYTICS' });
-  if (!res.success) return;
+  if (!res.success) {
+    setStatusBar(`Failed to load analytics: ${res.error}`, 'error');
+    return;
+  }
 
   const data = res.data as AnalyticsData;
 

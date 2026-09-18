@@ -222,6 +222,11 @@ btnSaveDate.addEventListener('click', async () => {
   await new Promise<void>((r) =>
     chrome.storage.local.set({ startDate: new Date(val).toISOString() }, r)
   );
+  
+  // Clear lastCheckAt so the next sync starts from this new date instead of the last synced date
+  await new Promise<void>((r) =>
+    chrome.storage.local.remove(['lastCheckAt'], r)
+  );
 
   showToast('✅ Start date saved!', 'success');
   await loadSettings();
