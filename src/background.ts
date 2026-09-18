@@ -91,17 +91,8 @@ async function runSync(): Promise<SyncResult> {
     throw new Error('Gmail session expired. Reconnect in Settings.');
   }
 
-  // Build Gmail search query. We search two things:
-  //  1. recent inbox mail, to catch new applications
-  //  2. anything already carrying one of our Job/* labels, so emails labeled by
-  //     a previous install (or archived out of the inbox) still get imported
-  //     into local storage instead of silently vanishing from the dashboard.
-  const labelQuery = getAllLabelNames()
-    .map((name) => `label:"${name}"`)
-    .join(' OR ');
-    
-  let query = `(in:inbox) OR (${labelQuery})`;
-
+  // Build Gmail search query. We search recent inbox mail to catch new applications.
+  let query = 'in:inbox';
   const since = storage.lastCheckAt ?? storage.startDate;
   if (since) {
     const d = new Date(since);
@@ -110,7 +101,7 @@ async function runSync(): Promise<SyncResult> {
       String(d.getMonth() + 1).padStart(2, '0'),
       String(d.getDate()).padStart(2, '0'),
     ].join('/');
-    query = `(${query}) after:${formatted}`;
+    query += ` after:${formatted}`;
   }
 
   // Reverse lookup so we can trust an email's *current* Gmail label as the
@@ -121,7 +112,7 @@ async function runSync(): Promise<SyncResult> {
   }
 
   console.log('[JobTracker] Sync query:', query);
-  const messageIds = await listMessageIds(token, query, 1000);
+  const messageIds = await listMessageIds(token, query, 300);
   console.log(`[JobTracker] ${messageIds.length} messages to check`);
 
   for (const id of messageIds) {
@@ -144,26 +135,13 @@ async function runSync(): Promise<SyncResult> {
 
       result.processed++;
 
-      let classification;
-      
-      if (existingStatus) {
-        // Skip OpenAI entirely to save tokens and time for historically labeled emails
-        classification = {
-          isJobRelated: true,
-          status: existingStatus,
-          company: 'Unknown Company',
-          role: 'Unknown Role',
-          tokensUsed: 0
-        };
-      } else {
-        // Classify with OpenAI for new inbox emails
-        classification = await classifyEmail(storage.openAiKey!, subject, snippet);
-        
-        // Track token usage
-        if (classification.tokensUsed > 0) {
-          result.tokensUsed = (result.tokensUsed ?? 0) + classification.tokensUsed;
-          await recordTokenUsage(classification.tokensUsed);
-        }
+      // Classify with OpenAI (still needed for company/role extraction)
+      const classification = await classifyEmail(storage.openAiKey!, subject, snippet);
+
+      // Track token usage
+      if (classification.tokensUsed > 0) {
+        result.tokensUsed = (result.tokensUsed ?? 0) + classification.tokensUsed;
+        await recordTokenUsage(classification.tokensUsed);
       }
 
       if (!existingStatus && !classification.isJobRelated) {
