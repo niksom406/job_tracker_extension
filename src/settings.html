@@ -166,7 +166,7 @@
           </div>
           <div>
             <h2 class="card-title">Sync Start Date</h2>
-            <p class="card-sub">Only fetch emails after this date on first sync</p>
+            <p class="card-sub">Required — the earliest email the first sync will look at</p>
           </div>
         </div>
 
@@ -175,7 +175,13 @@
           <button class="btn-secondary" id="btn-save-date">Save</button>
         </div>
 
-        <p class="hint">Leave blank to sync all emails. Every email in the window is classified once, so a large inbox takes longer and costs more on the first sync.</p>
+        <p class="hint">
+          <strong>What this means:</strong> your first sync checks inbox mail received on or after this date and ignores
+          everything older. Each later sync only checks mail that arrived since the previous sync finished, so the date
+          matters most for the first run. Every email in that window is sent to OpenAI once, so an earlier date means a
+          longer and costlier first sync — pick roughly when you started applying. Saving a new date restarts the next
+          sync from that date. Sync is disabled until a date is set.
+        </p>
       </section>
 
       <!-- ── Section 4: Gmail Labels ──────────────────────────── -->

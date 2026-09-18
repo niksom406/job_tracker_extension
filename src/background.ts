@@ -1,4 +1,5 @@
-import type { AppMessage, AppResponse, SyncResult, StatsData, AnalyticsData, DailyTokenRecord, JobStatus } from './lib/types';
+import type { AppMessage, AppResponse, SyncResult, StatsData, AnalyticsData, DailyTokenRecord, JobStatus, SyncStatus } from './lib/types';
+import { getSetupStatus, missingSetupSteps } from './lib/setup';
 import {
   getStorage,
   setStorage,
@@ -81,6 +82,16 @@ async function recordTokenUsage(tokens: number): Promise<void> {
 let activeSync: Promise<SyncResult> | null = null;
 let syncCancellationRequested = false;
 
+const IDLE_SYNC_STATUS: SyncStatus = { running: false, processed: 0, newApplications: 0, total: 0 };
+let currentSyncStatus: SyncStatus = { ...IDLE_SYNC_STATUS };
+
+// Written to storage so every open popup/dashboard tab can mirror the
+// spinner and progress via chrome.storage.onChanged, whichever one started it.
+async function publishSyncStatus(patch: Partial<SyncStatus>): Promise<void> {
+  currentSyncStatus = { ...currentSyncStatus, ...patch };
+  await setStorage({ syncStatus: currentSyncStatus });
+}
+
 /** Returns the exact lower bound used for both Gmail's query and local validation. */
 function getSyncCutoff(since?: string): number | undefined {
   if (!since) return undefined;
@@ -99,14 +110,9 @@ async function runSyncOnce(): Promise<SyncResult> {
     ...Object.keys(processedMessageIds),
   ]);
 
-  if (!storage.isConnected) {
-    throw new Error('Gmail not connected. Open Settings to connect.');
-  }
-  if (!storage.openAiKey) {
-    throw new Error('OpenAI API key missing. Open Settings to add your key.');
-  }
-  if (!storage.labelMap || Object.keys(storage.labelMap).length === 0) {
-    throw new Error('Gmail labels not set up. Open Settings → "Set Up Labels".');
+  const missing = missingSetupSteps(getSetupStatus(storage));
+  if (missing.length > 0) {
+    throw new Error(`Finish setup before syncing: ${missing.join(', ')}. Open Settings.`);
   }
 
   let token: string;
@@ -147,6 +153,13 @@ async function runSyncOnce(): Promise<SyncResult> {
   console.log('[JobTracker] Sync query:', query);
   const messageIds = await listMessageIds(token, query, 300);
   console.log(`[JobTracker] ${messageIds.length} messages to check`);
+  await publishSyncStatus({
+    running: true,
+    startedAt: syncStartedAt,
+    processed: 0,
+    newApplications: 0,
+    total: messageIds.filter((id) => !processedIds.has(id)).length,
+  });
 
   // A failed message must be retried next sync. Instead of freezing the
   // checkpoint until a perfectly clean pass, remember the earliest failure so
@@ -216,6 +229,7 @@ async function runSyncOnce(): Promise<SyncResult> {
         .find((s): s is JobStatus => s !== undefined);
 
       result.processed++;
+      await publishSyncStatus({ processed: result.processed });
 
       // Classify with OpenAI (still needed for company/role extraction)
       const classification = await classifyEmail(storage.openAiKey!, subject, snippet);
@@ -270,6 +284,7 @@ async function runSyncOnce(): Promise<SyncResult> {
       unsavedSinceFlush++;
 
       result.newApplications++;
+      await publishSyncStatus({ newApplications: result.newApplications });
       console.log(
         `[JobTracker] ✅ ${classification.company} – ${classification.role} (${classification.status})`
       );
@@ -307,8 +322,9 @@ async function runSyncOnce(): Promise<SyncResult> {
 /** Coalesce concurrent clicks from the popup/dashboard into one Gmail sync. */
 async function runSync(): Promise<SyncResult> {
   if (activeSync) return activeSync;
-  activeSync = runSyncOnce().finally(() => {
+  activeSync = runSyncOnce().finally(async () => {
     activeSync = null;
+    await publishSyncStatus({ running: false });
   });
   return activeSync;
 }
@@ -334,13 +350,10 @@ async function buildAnalytics(): Promise<AnalyticsData> {
   }
 
   const totalTokens = storage.totalTokensUsed ?? 0;
-  // gpt-4o-mini pricing: $0.150 per 1M input tokens (approx blended)
-  const estimatedCostUsd = (totalTokens / 1_000_000) * 0.3;
 
   return {
     totalTokens,
     totalEmails: apps.length,
-    estimatedCostUsd,
     dailyRecords: storage.dailyTokenRecords ?? [],
     applicationsByDate,
     statusBreakdown,
@@ -408,12 +421,18 @@ async function handleMessage(msg: AppMessage): Promise<AppResponse> {
     case 'GET_STATS': {
       const storage = await getStorage();
       const counts = await getStats();
+      const setup = getSetupStatus(storage);
       const data: StatsData = {
         ...counts,
         lastCheckAt: storage.lastCheckAt,
         startDate: storage.startDate,
         isConnected: storage.isConnected,
         userEmail: storage.userEmail,
+        // In-memory state is authoritative: storage could still say "running"
+        // if the service worker was killed mid-sync.
+        syncStatus: activeSync ? currentSyncStatus : { ...IDLE_SYNC_STATUS },
+        setup,
+        setupComplete: missingSetupSteps(setup).length === 0,
       };
       return { success: true, data };
     }
@@ -451,5 +470,9 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/settings.html') });
   }
 });
+
+// A fresh worker means no sync can be in flight; clear any stale flag left by
+// a worker that was terminated mid-sync so UIs don't spin forever.
+chrome.storage.local.set({ syncStatus: IDLE_SYNC_STATUS });
 
 console.log('[JobTracker] Background service worker ready ✅');

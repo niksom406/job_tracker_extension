@@ -44,11 +44,10 @@
     </button>
   </header>
 
-  <!-- Not connected state -->
-  <div id="not-connected" class="state-panel" style="display:none">
-    <div class="state-icon">🔗</div>
-    <p class="state-title">Connect Gmail to start</p>
-    <p class="state-sub">Open Settings to connect your Gmail account and add your OpenAI key.</p>
+  <!-- Setup checklist — shown until all four steps are done -->
+  <div id="setup-panel" class="state-panel setup-panel" style="display:none">
+    <p class="state-title">Finish setup to start syncing</p>
+    <ul class="setup-list" id="setup-list"></ul>
     <button class="btn-primary full-width" id="btn-go-settings">Open Settings →</button>
   </div>
 
@@ -91,6 +90,7 @@
         <button class="btn-stop-sync" id="btn-stop-sync" style="display:none">Stop</button>
       </div>
       <p class="last-synced" id="last-synced">Never synced</p>
+      <p class="last-synced" id="sync-window"></p>
     </div>
 
     <!-- Status message -->

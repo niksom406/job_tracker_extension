@@ -263,6 +263,9 @@ html, body {
 }
 
 .btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 42px;
   padding: 0 18px;
   background: transparent;

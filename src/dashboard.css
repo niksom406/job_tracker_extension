@@ -203,6 +203,42 @@ body {
 
 .sync-meta:empty { display: none; }
 
+/* Setup checklist banner */
+.setup-banner {
+  margin: 16px 28px 0;
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  flex-shrink: 0;
+  font-size: 13px;
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.35);
+  border-radius: var(--radius-sm);
+}
+
+.setup-banner-title { font-weight: 600; color: #fbbf24; }
+
+.setup-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.setup-list li.done { color: #34d399; }
+.setup-list li.todo { color: #fbbf24; }
+
+.setup-banner-link {
+  margin-left: auto;
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.setup-banner-link:hover { text-decoration: underline; }
+
 .page-title {
   font-size: 20px;
   font-weight: 700;
