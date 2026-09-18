@@ -406,6 +406,15 @@ html, body {
   line-height: 1.6;
 }
 
+.hint.reconnect-note {
+  margin-top: 14px;
+  padding: 10px 14px;
+  color: #fbbf24;
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: var(--radius-sm);
+}
+
 .link { color: #a5b4fc; text-decoration: none; }
 .link:hover { text-decoration: underline; }
 

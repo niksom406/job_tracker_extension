@@ -1,4 +1,5 @@
 import type { AppMessage, AppResponse, StorageData } from './lib/types';
+import { RECONNECT_MESSAGE } from './lib/setup';
 
 // ─── Messaging ────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ const gmailConnectedInfo = document.getElementById('gmail-connected-info')!;
 const gmailEmailDisplay  = document.getElementById('gmail-email-display')!;
 const btnConnectGmail    = document.getElementById('btn-connect-gmail') as HTMLButtonElement;
 const btnDisconnectGmail = document.getElementById('btn-disconnect-gmail') as HTMLButtonElement;
+const gmailReconnectNote = document.getElementById('gmail-reconnect-note')!;
 
 const openaiStatusBadge  = document.getElementById('openai-status-badge')!;
 const openaiKeyInput     = document.getElementById('openai-key-input') as HTMLInputElement;
@@ -123,6 +125,9 @@ async function loadSettings() {
       const storage = data as Partial<StorageData>;
 
       setGmailStatus(storage.isConnected ?? false, storage.userEmail);
+      const needsReconnect = !storage.isConnected && !!storage.gmailReconnectRequired;
+      gmailReconnectNote.textContent = needsReconnect ? RECONNECT_MESSAGE : '';
+      gmailReconnectNote.style.display = needsReconnect ? 'block' : 'none';
       setOpenAiStatus(!!(storage.openAiKey));
       setLabelsStatus(!!(storage.labelMap && Object.keys(storage.labelMap).length > 0));
       updateSteps(storage);

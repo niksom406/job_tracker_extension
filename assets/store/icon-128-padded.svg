@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Chrome Web Store guideline: 96px artwork centred on a 128px transparent canvas -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e1f3a"/>
+      <stop offset="1" stop-color="#0a0b0f"/>
+    </linearGradient>
+    <linearGradient id="case" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(16 16) scale(0.75)">
+    <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+    <rect x="1" y="1" width="126" height="126" rx="27" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+    <path d="M50 42v-7a8 8 0 0 1 8-8h12a8 8 0 0 1 8 8v7" fill="none" stroke="#a5b4fc" stroke-width="7" stroke-linecap="round"/>
+    <rect x="24" y="42" width="80" height="56" rx="12" fill="url(#case)"/>
+    <path d="M24 63h80" stroke="#0a0b0f" stroke-opacity="0.35" stroke-width="4"/>
+    <rect x="58" y="57" width="12" height="11" rx="3" fill="#c7d2fe"/>
+    <circle cx="98" cy="96" r="20" fill="#0a0b0f"/>
+    <circle cx="98" cy="96" r="15" fill="#10b981"/>
+    <path d="M90 96.5l5.5 5.5L107 90.5" fill="none" stroke="#0a0b0f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

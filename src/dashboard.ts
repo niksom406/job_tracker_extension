@@ -1,5 +1,5 @@
 import type { AppMessage, AppResponse, Application, AnalyticsData, StatsData, SyncStatus, SetupStatus } from './lib/types';
-import { SETUP_STEPS } from './lib/setup';
+import { SETUP_STEPS, RECONNECT_MESSAGE } from './lib/setup';
 
 // ─── Messaging ────────────────────────────────────────────────────────────────
 
@@ -35,6 +35,7 @@ const totalCount    = document.getElementById('total-count')!;
 const syncMeta      = document.getElementById('sync-meta')!;
 const setupBanner   = document.getElementById('setup-banner')!;
 const setupList     = document.getElementById('setup-list')!;
+const setupNote     = document.getElementById('setup-note')!;
 const pageTitle     = document.getElementById('page-title')!;
 const statusBar     = document.getElementById('status-bar')!;
 const statusBarText = document.getElementById('status-bar-text')!;
@@ -165,7 +166,7 @@ function renderTable() {
       <td class="role-cell" title="${escapeHtml(app.role)}">${escapeHtml(app.role)}</td>
       <td><span class="${badgeClass(app.status)}">${statusLabel(app.status)}</span></td>
       <td class="date-cell">${formatDate(app.emailDate)}</td>
-      <td class="action-cell"><button class="view-btn" data-id="${app.id}">View →</button></td>
+      <td class="action-cell"><button class="view-btn" data-id="${escapeHtml(app.id)}">View →</button></td>
     `;
 
     tr.addEventListener('click', () => openDetail(app));
@@ -315,8 +316,10 @@ function formatDateTime(iso: string): string {
   });
 }
 
-function renderSetup(setup: SetupStatus, complete: boolean) {
+function renderSetup(setup: SetupStatus, complete: boolean, reconnectRequired: boolean) {
   setupBanner.style.display = complete ? 'none' : 'flex';
+  setupNote.textContent = reconnectRequired ? RECONNECT_MESSAGE : '';
+  setupNote.style.display = reconnectRequired ? 'block' : 'none';
   setupList.innerHTML = SETUP_STEPS
     .map((step) => {
       const done = setup[step.key];
@@ -329,9 +332,9 @@ function renderSetup(setup: SetupStatus, complete: boolean) {
 // another dashboard tab — the background publishes it to storage for everyone.
 function applySyncStatus(s: SyncStatus) {
   setSyncing(s.running);
-  if (!s.running || syncInitiatedHere) return;
+  if (!s.running) return;
   const found = s.newApplications > 0 ? `, ${s.newApplications} new so far` : '';
-  setStatusBar(`Sync in progress — ${s.processed}/${s.total} emails checked${found}`, 'info');
+  setStatusBar(`Syncing — ${s.processed}/${s.total} emails checked${found}`, 'info');
 }
 
 async function renderSyncState() {
@@ -340,7 +343,7 @@ async function renderSyncState() {
 
   const data = res.data as StatsData;
   setupComplete = data.setupComplete;
-  renderSetup(data.setup, data.setupComplete);
+  renderSetup(data.setup, data.setupComplete, data.reconnectRequired);
 
   const from = data.lastCheckAt ?? data.startDate;
   syncMeta.textContent = [
@@ -353,8 +356,20 @@ async function renderSyncState() {
   applySyncStatus(data.syncStatus);
 }
 
+let appsRefreshTimer: number | undefined;
+
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !changes.syncStatus) return;
+  if (area !== 'local') return;
+
+  // Applications are written as the sync finds them; refresh the list as
+  // they land instead of waiting for the run to finish. Debounced because a
+  // fast run can write several in quick succession.
+  if (changes.applications) {
+    clearTimeout(appsRefreshTimer);
+    appsRefreshTimer = window.setTimeout(loadApps, 300);
+  }
+
+  if (!changes.syncStatus) return;
   const s = changes.syncStatus.newValue as SyncStatus | undefined;
   if (!s) return;
 

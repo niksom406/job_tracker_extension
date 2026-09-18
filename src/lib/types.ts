@@ -41,6 +41,10 @@ export interface StorageData {
   dailyTokenRecords?: DailyTokenRecord[];
   // Live progress of the current sync, shared with every open popup/dashboard
   syncStatus?: SyncStatus;
+  // Set when Google reports the grant expired/revoked (7-day testing-mode limit)
+  gmailReconnectRequired?: boolean;
+  // One-time flag: existing Job/* labels have been given the palette colours
+  labelColorsApplied?: boolean;
 }
 
 // ─── AI Classification ──────────────────────────────────────────────────────
@@ -111,6 +115,7 @@ export interface StatsData {
   syncStatus: SyncStatus;
   setup: SetupStatus;
   setupComplete: boolean;
+  reconnectRequired: boolean;
 }
 
 // ─── Gmail API ──────────────────────────────────────────────────────────────
