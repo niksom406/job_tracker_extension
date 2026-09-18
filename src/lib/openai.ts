@@ -2,14 +2,19 @@ import type { ClassifyResult, JobStatus } from './types';
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 
-const SYSTEM_PROMPT = `You are a job application email classifier. Given an email subject and snippet, classify whether it relates to a job application.
+const SYSTEM_PROMPT = `You are a job application email classifier. Given an email subject and snippet, decide whether it is part of a job application process the recipient is personally involved in.
+
+isJobRelated is true ONLY for emails about a specific application the recipient made, or a named recruiter/hiring manager writing to them directly about a specific role: application confirmations, rejections, interview invitations, assessments, offers.
+
+isJobRelated is false for anything automated or promotional, even if it mentions companies, roles or salaries: job alerts, job recommendations, "jobs for you" digests, job-board newsletters (LinkedIn, Indeed, Vaia, Glassdoor, Reed, Otta, etc.), requests to review or rate a company or interview, profile/notification emails from job sites, career-site marketing, newsletters, receipts, account notifications.
 
 Return ONLY a JSON object with this exact shape:
 {
   "isJobRelated": <boolean>,
   "company": "<company name, or empty string>",
   "role": "<job title, or empty string>",
-  "status": "<applied|interview|assessment|offer|rejected>"
+  "status": "<applied|interview|assessment|offer|rejected>",
+  "confidence": <0.0-1.0, how sure you are about BOTH isJobRelated and status; use below 0.6 when the email is ambiguous>
 }
 
 Status guide:
@@ -70,17 +75,26 @@ export async function classifyEmail(
     company?: string;
     role?: string;
     status?: string;
+    confidence?: number;
   };
 
   const status: JobStatus = VALID_STATUSES.includes(parsed.status as JobStatus)
     ? (parsed.status as JobStatus)
     : 'applied';
 
+  // A missing/invalid confidence is treated as uncertain so it lands in review
+  // rather than being silently filed.
+  const confidence =
+    typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
+      ? Math.min(1, Math.max(0, parsed.confidence))
+      : 0.5;
+
   return {
     isJobRelated: Boolean(parsed.isJobRelated),
     company: parsed.company?.trim() || 'Unknown Company',
     role: parsed.role?.trim() || 'Unknown Role',
     status,
+    confidence,
     tokensUsed,
   };
 }

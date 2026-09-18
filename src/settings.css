@@ -400,6 +400,8 @@ html, body {
   box-shadow: 0 0 0 3px rgba(99,102,241,0.08);
 }
 
+.label-chip.review-chip { background: rgba(250,209,101,0.14); color: #fde68a; }
+
 .hint {
   font-size: 12px;
   color: var(--text-3);

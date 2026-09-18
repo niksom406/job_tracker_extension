@@ -2,8 +2,9 @@
   "manifest_version": 3,
   "name": "JobTracker — AI Gmail Job Tracker",
   "short_name": "JobTracker",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Automatically track your job applications from Gmail using AI. No server. Private. Free.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqGqAr+FrPlpJ5qtMv+IRn26m7jLMf6f426t2+6XMKjvDJ6ogom8OuuGdfDkkTc+btxHJ4mGYyKQAkfhPBCZ35EEhUvA5jTzuD75MgSjF1sQruZgr9RMrqAF9bT8OkjJET/3ocZStPZgiR2rZmzJ8TvMD0BuY6OS10j7MX+7X5lby3wNX6XkbfTNUqIOI4BuWLIo+jOVnd8BBRtSzTg4gqZEaV999gAfGb5Ad4M5ZxQe+d74UOpEwcX7a3/mHlzNYKCpvUy/5obwIHnci8bh6KKPQTRLwYj1jn7Gpe+bDfeFDxtRoVX6XwLPkuGjAA11fGVTeZRe9dsCD94KcEZIIQwIDAQAB",
   "permissions": [
     "identity",
     "storage"

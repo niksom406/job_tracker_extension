@@ -28,6 +28,7 @@ const syncLabel      = document.getElementById('sync-label')!;
 const syncSpinner    = document.getElementById('sync-spinner')!;
 const lastSyncedEl   = document.getElementById('last-synced')!;
 const syncWindowEl   = document.getElementById('sync-window')!;
+const reviewHint     = document.getElementById('review-hint') as HTMLButtonElement;
 const statusMsg      = document.getElementById('status-msg')!;
 const btnSettings    = document.getElementById('btn-settings')!;
 const btnDashboard   = document.getElementById('btn-dashboard')!;
@@ -119,6 +120,13 @@ function renderStats(data: StatsData) {
   statInterview.textContent = String(data.interview);
   statOffer.textContent     = String(data.offer);
   statRejected.textContent  = String(data.rejected);
+
+  if (data.review > 0) {
+    reviewHint.textContent = `${data.review} email${data.review !== 1 ? 's' : ''} need${data.review === 1 ? 's' : ''} your review — open Dashboard →`;
+    reviewHint.style.display = 'block';
+  } else {
+    reviewHint.style.display = 'none';
+  }
 
   if (data.lastCheckAt) {
     lastSyncedEl.textContent = `Last synced ${timeAgo(data.lastCheckAt)} (${formatDateTime(data.lastCheckAt)})`;
@@ -251,6 +259,7 @@ btnStopSync.addEventListener('click', handleStopSync);
 btnSettings.addEventListener('click', openSettings);
 btnFooterSettings.addEventListener('click', openSettings);
 btnDashboard.addEventListener('click', openDashboard);
+reviewHint.addEventListener('click', openDashboard);
 btnGoSettings?.addEventListener('click', openSettings);
 
 // ─── Init ─────────────────────────────────────────────────────────────────────

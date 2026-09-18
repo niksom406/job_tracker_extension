@@ -320,6 +320,24 @@ html, body {
 .setup-list li.done { color: #34d399; }
 .setup-list li.todo { color: #fbbf24; }
 
+.review-hint {
+  display: block;
+  width: calc(100% - 36px);
+  margin: 12px 18px 0;
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  color: #fde68a;
+  background: rgba(250,209,101,0.1);
+  border: 1px solid rgba(250,209,101,0.3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.review-hint:hover { background: rgba(250,209,101,0.16); }
+
 .setup-note {
   font-size: 12px;
   line-height: 1.5;

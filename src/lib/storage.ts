@@ -44,6 +44,7 @@ export async function getStats() {
     assessment: apps.filter((a) => a.status === 'assessment').length,
     offer: apps.filter((a) => a.status === 'offer').length,
     rejected: apps.filter((a) => a.status === 'rejected').length,
+    review: apps.filter((a) => a.status === 'review').length,
     total: apps.length,
   };
 }
