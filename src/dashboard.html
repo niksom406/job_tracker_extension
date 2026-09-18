@@ -85,6 +85,7 @@
         <div class="topbar-left">
           <h1 class="page-title" id="page-title">All Applications</h1>
           <span class="total-count" id="total-count">Loading…</span>
+          <span class="sync-meta" id="sync-meta"></span>
         </div>
         <div class="topbar-right">
           <div class="search-wrap">
@@ -95,6 +96,7 @@
             <svg id="sync-spinner-top" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 0 1-9 9M3 12a9 9 0 0 1 9-9"/><path d="M21 12l-3-3m3 3l-3 3"/></svg>
             Sync
           </button>
+          <button class="btn-stop-sync-top" id="btn-stop-sync-top" style="display:none">Stop</button>
         </div>
       </div>
 
@@ -220,18 +222,18 @@
           <div class="chart-empty" id="chart-empty-3" style="display:none">Token usage will appear after first sync</div>
         </div>
 
-        <!-- Chart 4: Top companies bar -->
+        <!-- Chart 4: Applications per week bar -->
         <div class="chart-card" id="chart-card-4">
           <div class="chart-header">
             <div>
-              <h3 class="chart-title">Top Companies</h3>
-              <p class="chart-sub">Most frequent in your applications</p>
+              <h3 class="chart-title">Applications per Week</h3>
+              <p class="chart-sub">New applications in each of the last 8 weeks</p>
             </div>
             <div class="chart-icon chart-icon-green">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="4" height="18" rx="1"/><rect x="9" y="8" width="4" height="13" rx="1"/><rect x="16" y="13" width="4" height="8" rx="1"/></svg>
             </div>
           </div>
-          <canvas id="canvas-companies" class="chart-canvas"></canvas>
+          <canvas id="canvas-weekly" class="chart-canvas"></canvas>
           <div class="chart-empty" id="chart-empty-4" style="display:none">No data yet — sync your inbox first</div>
         </div>
       </div>

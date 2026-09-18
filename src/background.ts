@@ -2,9 +2,7 @@ import type { AppMessage, AppResponse, SyncResult, StatsData, AnalyticsData, Dai
 import {
   getStorage,
   setStorage,
-  saveApplication,
   getStats,
-  hasApplication,
   updateLastCheckAt,
   getApplications,
 } from './lib/storage';
@@ -17,13 +15,25 @@ import {
   extractBody,
 } from './lib/gmail';
 import { classifyEmail } from './lib/openai';
-import { bootstrapLabels, getLabelId, getAllLabelNames } from './lib/labels';
+import { bootstrapLabels, getLabelId } from './lib/labels';
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-function getAuthToken(interactive: boolean): Promise<string> {
+function getAuthToken(interactive: boolean, timeoutMs = 30_000): Promise<string> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(
+        'Google sign-in did not finish. Check that the account is signed in to this Chrome profile and, if your OAuth consent screen is in Testing mode, add it as a test user.'
+      ));
+    }, timeoutMs);
+
     chrome.identity.getAuthToken({ interactive }, (token) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
       if (chrome.runtime.lastError || !token) {
         reject(new Error(chrome.runtime.lastError?.message ?? 'Auth failed'));
       } else {
@@ -68,9 +78,26 @@ async function recordTokenUsage(tokens: number): Promise<void> {
 
 // ─── Sync logic ───────────────────────────────────────────────────────────────
 
-async function runSync(): Promise<SyncResult> {
+let activeSync: Promise<SyncResult> | null = null;
+let syncCancellationRequested = false;
+
+/** Returns the exact lower bound used for both Gmail's query and local validation. */
+function getSyncCutoff(since?: string): number | undefined {
+  if (!since) return undefined;
+  const timestamp = new Date(since).getTime();
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+async function runSyncOnce(): Promise<SyncResult> {
+  syncCancellationRequested = false;
   const storage = await getStorage();
   const result: SyncResult = { processed: 0, newApplications: 0, errors: 0, tokensUsed: 0 };
+  const syncStartedAt = new Date().toISOString();
+  const processedMessageIds = { ...(storage.processedMessageIds ?? {}) };
+  const processedIds = new Set([
+    ...Object.keys(storage.applications),
+    ...Object.keys(processedMessageIds),
+  ]);
 
   if (!storage.isConnected) {
     throw new Error('Gmail not connected. Open Settings to connect.');
@@ -91,17 +118,23 @@ async function runSync(): Promise<SyncResult> {
     throw new Error('Gmail session expired. Reconnect in Settings.');
   }
 
-  // Build Gmail search query. We search recent inbox mail to catch new applications.
+  // Gmail's YYYY/MM/DD search is day-granular and based on Gmail's timezone,
+  // which can return mail from the previous local calendar day. Unix seconds
+  // are exact; the local check below is retained as a second safeguard.
   let query = 'in:inbox';
-  const since = storage.lastCheckAt ?? storage.startDate;
-  if (since) {
-    const d = new Date(since);
-    const formatted = [
-      d.getFullYear(),
-      String(d.getMonth() + 1).padStart(2, '0'),
-      String(d.getDate()).padStart(2, '0'),
-    ].join('/');
-    query += ` after:${formatted}`;
+  const cutoff = getSyncCutoff(storage.lastCheckAt ?? storage.startDate);
+  if (cutoff !== undefined) {
+    // Gmail's after operator is strictly greater than its operand. Subtract one
+    // second so a message received exactly at the selected day's midnight is in
+    // the result set, then enforce the precise millisecond boundary locally.
+    query += ` after:${Math.floor(cutoff / 1000) - 1}`;
+    const source = storage.lastCheckAt ? 'last sync' : 'start date';
+    console.log(
+      `[JobTracker] Only checking mail received on/after ${new Date(cutoff).toLocaleString()} ` +
+      `(${new Date(cutoff).toISOString()}, from ${source})`
+    );
+  } else {
+    console.log('[JobTracker] No start date or previous sync — checking all inbox mail');
   }
 
   // Reverse lookup so we can trust an email's *current* Gmail label as the
@@ -115,18 +148,67 @@ async function runSync(): Promise<SyncResult> {
   const messageIds = await listMessageIds(token, query, 300);
   console.log(`[JobTracker] ${messageIds.length} messages to check`);
 
+  // A failed message must be retried next sync. Instead of freezing the
+  // checkpoint until a perfectly clean pass, remember the earliest failure so
+  // the checkpoint can advance to it: everything newer was already handled.
+  let earliestFailureAt: number | undefined;
+  let failureWithUnknownDate = false;
+
+  // Flush progress every few messages so closing the browser mid-sync keeps
+  // what was already classified (and paid for).
+  let unsavedSinceFlush = 0;
+  const persistProgress = async () => {
+    // Keep the non-job de-duplication data bounded. Applications themselves are
+    // retained indefinitely because they are the dashboard's source of truth.
+    const processedCutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    const recentProcessedMessageIds = Object.fromEntries(
+      Object.entries(processedMessageIds).filter(([, processedAt]) => {
+        const timestamp = new Date(processedAt).getTime();
+        return Number.isFinite(timestamp) && timestamp >= processedCutoff;
+      })
+    );
+    await setStorage({
+      applications: storage.applications,
+      processedMessageIds: recentProcessedMessageIds,
+    });
+    unsavedSinceFlush = 0;
+  };
+
   for (const id of messageIds) {
+    if (syncCancellationRequested) {
+      result.cancelled = true;
+      console.log('[JobTracker] Sync stopped by user.');
+      break;
+    }
+
+    if (unsavedSinceFlush >= 10) await persistProgress();
+
+    let receivedAt: number | undefined;
     try {
-      // Skip already-processed emails
-      if (await hasApplication(id)) continue;
+      // Skip job messages and non-job messages already classified in an earlier
+      // run. Without this, every unlabelled non-job email is sent to OpenAI on
+      // every sync and a run can appear never-ending.
+      if (processedIds.has(id)) continue;
 
       const msg = await getMessage(token, id);
+      receivedAt = Number.parseInt(msg.internalDate, 10);
+      if (!Number.isFinite(receivedAt)) {
+        throw new Error('Gmail returned a message with an invalid internal date.');
+      }
+      if (cutoff !== undefined && receivedAt < cutoff) {
+        console.warn(
+          `[JobTracker] Ignoring message ${id} received ${new Date(receivedAt).toISOString()} — before the cutoff.`
+        );
+        continue;
+      }
+
       const subject = extractHeader(msg, 'Subject');
       const snippet = msg.snippet ?? '';
-      const dateHeader = extractHeader(msg, 'Date');
-      const emailDate = dateHeader
-        ? new Date(dateHeader).toISOString()
-        : new Date(parseInt(msg.internalDate, 10)).toISOString();
+      // Use Gmail's receipt timestamp consistently for the displayed date and
+      // filtering. Sender-provided Date headers can be malformed or can refer
+      // to the preceding day in a different timezone.
+      const emailDate = new Date(receivedAt).toISOString();
+      console.log(`[JobTracker] Checking ${id} received ${emailDate}`);
 
       // Already labeled from a previous sync/install? Trust that status.
       const existingStatus = msg.labelIds
@@ -144,8 +226,20 @@ async function runSync(): Promise<SyncResult> {
         await recordTokenUsage(classification.tokensUsed);
       }
 
+      // An in-flight Gmail/OpenAI request cannot be safely interrupted after it
+      // has been sent. Stop before any further processing and preserve the work
+      // completed before this point.
+      if (syncCancellationRequested) {
+        result.cancelled = true;
+        console.log('[JobTracker] Sync stopped by user.');
+        break;
+      }
+
       if (!existingStatus && !classification.isJobRelated) {
         console.log(`[JobTracker] Not job-related: "${subject}"`);
+        processedIds.add(id);
+        processedMessageIds[id] = new Date().toISOString();
+        unsavedSinceFlush++;
         continue;
       }
 
@@ -159,8 +253,8 @@ async function runSync(): Promise<SyncResult> {
         }
       }
 
-      // Persist to chrome.storage
-      await saveApplication({
+      // Persist in the in-memory copy and write it once after the batch.
+      storage.applications[id] = {
         id,
         threadId: msg.threadId,
         company: classification.company,
@@ -170,7 +264,10 @@ async function runSync(): Promise<SyncResult> {
         subject,
         snippet,
         syncedAt: new Date().toISOString(),
-      });
+      };
+      processedIds.add(id);
+      processedMessageIds[id] = new Date().toISOString();
+      unsavedSinceFlush++;
 
       result.newApplications++;
       console.log(
@@ -182,11 +279,38 @@ async function runSync(): Promise<SyncResult> {
     } catch (err) {
       console.error(`[JobTracker] ❌ Error on message ${id}:`, err);
       result.errors++;
+      if (receivedAt !== undefined && Number.isFinite(receivedAt)) {
+        earliestFailureAt = Math.min(earliestFailureAt ?? receivedAt, receivedAt);
+      } else {
+        failureWithUnknownDate = true;
+      }
     }
   }
 
-  await updateLastCheckAt();
+  await persistProgress();
+
+  if (syncCancellationRequested) result.cancelled = true;
+  if (!result.cancelled) {
+    if (result.errors === 0) {
+      await updateLastCheckAt(syncStartedAt);
+    } else if (!failureWithUnknownDate && earliestFailureAt !== undefined) {
+      // The cutoff is inclusive, so the failed message itself is retried next
+      // time while everything older stays out of the window.
+      await updateLastCheckAt(new Date(earliestFailureAt).toISOString());
+    }
+    // If a failure's date is unknown (the fetch itself failed), keep the old
+    // checkpoint so the whole window is retried.
+  }
   return result;
+}
+
+/** Coalesce concurrent clicks from the popup/dashboard into one Gmail sync. */
+async function runSync(): Promise<SyncResult> {
+  if (activeSync) return activeSync;
+  activeSync = runSyncOnce().finally(() => {
+    activeSync = null;
+  });
+  return activeSync;
 }
 
 // ─── Analytics builder ────────────────────────────────────────────────────────
@@ -198,7 +322,6 @@ async function buildAnalytics(): Promise<AnalyticsData> {
   // Applications by date
   const applicationsByDate: Record<string, number> = {};
   const statusBreakdown: Record<string, number> = {};
-  const companyMap: Record<string, number> = {};
 
   for (const app of apps) {
     if (typeof app.emailDate === 'string') {
@@ -208,15 +331,7 @@ async function buildAnalytics(): Promise<AnalyticsData> {
     if (app.status) {
       statusBreakdown[app.status] = (statusBreakdown[app.status] ?? 0) + 1;
     }
-    if (app.company && app.company !== 'Unknown Company') {
-      companyMap[app.company] = (companyMap[app.company] ?? 0) + 1;
-    }
   }
-
-  const topCompanies = Object.entries(companyMap)
-    .map(([company, count]) => ({ company, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
 
   const totalTokens = storage.totalTokensUsed ?? 0;
   // gpt-4o-mini pricing: $0.150 per 1M input tokens (approx blended)
@@ -229,7 +344,6 @@ async function buildAnalytics(): Promise<AnalyticsData> {
     dailyRecords: storage.dailyTokenRecords ?? [],
     applicationsByDate,
     statusBreakdown,
-    topCompanies,
   };
 }
 
@@ -284,6 +398,12 @@ async function handleMessage(msg: AppMessage): Promise<AppResponse> {
       return { success: true, data: result };
     }
 
+    // ── Stop an in-progress email sync ──────────────────────────────────────
+    case 'CANCEL_SYNC': {
+      if (activeSync) syncCancellationRequested = true;
+      return { success: true, data: null };
+    }
+
     // ── Stats for popup ──────────────────────────────────────────────────────
     case 'GET_STATS': {
       const storage = await getStorage();
@@ -291,6 +411,7 @@ async function handleMessage(msg: AppMessage): Promise<AppResponse> {
       const data: StatsData = {
         ...counts,
         lastCheckAt: storage.lastCheckAt,
+        startDate: storage.startDate,
         isConnected: storage.isConnected,
         userEmail: storage.userEmail,
       };

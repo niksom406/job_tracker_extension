@@ -122,10 +122,9 @@ async function loadSettings() {
       if (storage.startDate) {
         startDateInput.value = storage.startDate.slice(0, 10);
       } else {
-        // Default: 3 months ago
-        const d = new Date();
-        d.setMonth(d.getMonth() - 3);
-        startDateInput.value = d.toISOString().slice(0, 10);
+        // Do not silently choose a date. The date input remains fully editable
+        // and an empty value intentionally means "sync all available mail".
+        startDateInput.value = '';
       }
 
       resolve();
@@ -139,10 +138,21 @@ btnConnectGmail.addEventListener('click', async () => {
   btnConnectGmail.disabled = true;
   btnConnectGmail.textContent = 'Connecting…';
 
-  const res = await send({ type: 'CONNECT_GMAIL' });
+  try {
+    const res = await send({ type: 'CONNECT_GMAIL' });
 
-  btnConnectGmail.disabled = false;
-  btnConnectGmail.innerHTML = `
+    if (!res.success) {
+      showToast(res.error, 'error', 10_000);
+      return;
+    }
+
+    showToast('✅ Gmail connected successfully!', 'success');
+    await loadSettings();
+  } finally {
+    // Always restore the control—even if Chrome cancels or never completes its
+    // account chooser—so the user is never left on a disabled “Connecting…” button.
+    btnConnectGmail.disabled = false;
+    btnConnectGmail.innerHTML = `
     <svg width="18" height="18" viewBox="0 0 24 24">
       <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
       <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -150,14 +160,7 @@ btnConnectGmail.addEventListener('click', async () => {
       <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
     </svg>
     Connect Gmail`;
-
-  if (!res.success) {
-    showToast(res.error, 'error');
-    return;
   }
-
-  showToast('✅ Gmail connected successfully!', 'success');
-  await loadSettings();
 });
 
 // ─── Gmail disconnect ─────────────────────────────────────────────────────────
@@ -215,12 +218,34 @@ btnSaveKey.addEventListener('click', async () => {
 btnSaveDate.addEventListener('click', async () => {
   const val = startDateInput.value;
   if (!val) {
-    showToast('Please select a start date.', 'error');
+    const stored = await new Promise<Partial<StorageData>>((resolve) =>
+      chrome.storage.local.get(['startDate', 'lastCheckAt'], (data) => resolve(data))
+    );
+
+    // Saving an empty field means "sync all mail". If nothing is stored there is
+    // nothing to undo, and removing lastCheckAt anyway would throw away sync
+    // progress and make the next run re-classify the whole mailbox.
+    if (!stored.startDate && !stored.lastCheckAt) {
+      showToast('No start date set — the next sync will search all mail.', 'info');
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) =>
+      chrome.storage.local.remove(['startDate', 'lastCheckAt'], () => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve();
+      })
+    );
+    showToast('Start date cleared. The next sync will search all mail.', 'info');
+    await loadSettings();
     return;
   }
 
+  // Date inputs represent a calendar day. Build local midnight explicitly so
+  // the value never shifts to the preceding day in time zones west of UTC.
+  const startOfSelectedDay = new Date(`${val}T00:00:00`);
   await new Promise<void>((r) =>
-    chrome.storage.local.set({ startDate: new Date(val).toISOString() }, r)
+    chrome.storage.local.set({ startDate: startOfSelectedDay.toISOString() }, r)
   );
   
   // Clear lastCheckAt so the next sync starts from this new date instead of the last synced date

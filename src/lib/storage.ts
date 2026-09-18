@@ -1,4 +1,4 @@
-import type { StorageData, Application, LabelMap } from './types';
+import type { StorageData, Application } from './types';
 
 const DEFAULTS: StorageData = {
   applications: {},
@@ -27,17 +27,6 @@ export async function setStorage(data: Partial<StorageData>): Promise<void> {
 
 // ─── Application helpers ─────────────────────────────────────────────────────
 
-export async function saveApplication(app: Application): Promise<void> {
-  const storage = await getStorage();
-  const applications = { ...storage.applications, [app.id]: app };
-  await setStorage({ applications });
-}
-
-export async function hasApplication(id: string): Promise<boolean> {
-  const storage = await getStorage();
-  return id in storage.applications;
-}
-
 export async function getApplications(): Promise<Application[]> {
   const storage = await getStorage();
   return Object.values(storage.applications).sort(
@@ -59,6 +48,6 @@ export async function getStats() {
   };
 }
 
-export async function updateLastCheckAt(): Promise<void> {
-  await setStorage({ lastCheckAt: new Date().toISOString() });
+export async function updateLastCheckAt(timestamp = new Date().toISOString()): Promise<void> {
+  await setStorage({ lastCheckAt: timestamp });
 }

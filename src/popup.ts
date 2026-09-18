@@ -20,6 +20,7 @@ const statInterview  = document.getElementById('stat-interview')!;
 const statOffer      = document.getElementById('stat-offer')!;
 const statRejected   = document.getElementById('stat-rejected')!;
 const btnSync        = document.getElementById('btn-sync') as HTMLButtonElement;
+const btnStopSync    = document.getElementById('btn-stop-sync') as HTMLButtonElement;
 const syncLabel      = document.getElementById('sync-label')!;
 const syncSpinner    = document.getElementById('sync-spinner')!;
 const lastSyncedEl   = document.getElementById('last-synced')!;
@@ -64,6 +65,9 @@ function setSyncing(syncing: boolean) {
   btnSync.disabled = syncing;
   syncSpinner.classList.toggle('spinning', syncing);
   syncLabel.textContent = syncing ? 'Syncing…' : 'Sync Now';
+  btnStopSync.style.display = syncing ? 'block' : 'none';
+  btnStopSync.disabled = false;
+  btnStopSync.textContent = 'Stop';
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
@@ -75,9 +79,14 @@ function renderStats(data: StatsData) {
   statRejected.textContent  = String(data.rejected);
 
   if (data.lastCheckAt) {
-    lastSyncedEl.textContent = `Last synced ${timeAgo(data.lastCheckAt)}`;
+    const exact = new Date(data.lastCheckAt).toLocaleString('en-GB', {
+      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+    });
+    lastSyncedEl.textContent = `Last synced ${timeAgo(data.lastCheckAt)} (${exact})`;
+    lastSyncedEl.title = `Next sync only checks mail received after ${exact}`;
   } else {
     lastSyncedEl.textContent = 'Never synced';
+    lastSyncedEl.title = '';
   }
 
   if (data.userEmail) {
@@ -120,22 +129,40 @@ async function handleSync() {
     return;
   }
 
-  const { newApplications, processed, errors } = res.data as {
+  const { newApplications, processed, errors, cancelled } = res.data as {
     newApplications: number;
     processed: number;
     errors: number;
+    cancelled?: boolean;
   };
 
+  if (cancelled) {
+    showStatus(`Sync stopped after checking ${processed} email${processed !== 1 ? 's' : ''}.`, 'info');
+    await loadStats();
+    return;
+  }
+
   let msg = `✅ Found ${newApplications} new application${newApplications !== 1 ? 's' : ''}`;
+  if (processed > 0) msg += ` after checking ${processed} email${processed !== 1 ? 's' : ''}`;
   if (errors > 0) msg += ` (${errors} error${errors !== 1 ? 's' : ''})`;
   showStatus(msg, 'success');
 
   await loadStats();
 }
 
+async function handleStopSync() {
+  btnStopSync.disabled = true;
+  btnStopSync.textContent = 'Stopping…';
+  showStatus('Stopping after the current email…', 'info');
+
+  const res = await send({ type: 'CANCEL_SYNC' });
+  if (!res.success) showStatus(res.error, 'error');
+}
+
 // ─── Events ───────────────────────────────────────────────────────────────────
 
 btnSync.addEventListener('click', handleSync);
+btnStopSync.addEventListener('click', handleStopSync);
 btnSettings.addEventListener('click', openSettings);
 btnFooterSettings.addEventListener('click', openSettings);
 btnDashboard.addEventListener('click', openDashboard);

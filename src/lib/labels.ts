@@ -65,8 +65,3 @@ export function getLabelId(
 ): string | undefined {
   return labelMap[status];
 }
-
-/** Gmail label names this extension owns, e.g. "Job/Applied". */
-export function getAllLabelNames(): string[] {
-  return Object.values(LABEL_CONFIGS).map((c) => c.name);
-}

@@ -24,6 +24,12 @@ export interface LabelMap {
 
 export interface StorageData {
   applications: Record<string, Application>; // keyed by Gmail message ID
+  /**
+   * Messages which have already been classified, including messages that were
+   * not job-related. Keeping this separately prevents every sync from paying
+   * to classify the same non-job email again.
+   */
+  processedMessageIds?: Record<string, string>; // message ID → processed ISO date
   lastCheckAt?: string;   // ISO string — when we last synced
   openAiKey?: string;     // User's OpenAI API key
   startDate?: string;     // ISO string — "check emails since this date"
@@ -51,6 +57,7 @@ export interface SyncResult {
   newApplications: number;// new ones saved
   errors: number;
   tokensUsed?: number;    // total tokens consumed in this sync
+  cancelled?: boolean;    // true when the user stopped the current run
 }
 
 // ─── Token / Cost Tracking ───────────────────────────────────────────────────
@@ -68,7 +75,6 @@ export interface AnalyticsData {
   dailyRecords: DailyTokenRecord[];
   applicationsByDate: Record<string, number>;  // YYYY-MM-DD → count
   statusBreakdown: Record<string, number>;
-  topCompanies: Array<{ company: string; count: number }>;
 }
 
 // ─── UI Stats ───────────────────────────────────────────────────────────────
@@ -81,6 +87,7 @@ export interface StatsData {
   rejected: number;
   total: number;
   lastCheckAt?: string;
+  startDate?: string;
   isConnected: boolean;
   userEmail?: string;
 }
@@ -122,6 +129,7 @@ export interface GmailLabelColor {
 
 export type AppMessage =
   | { type: 'SYNC' }
+  | { type: 'CANCEL_SYNC' }
   | { type: 'GET_STATS' }
   | { type: 'SETUP_LABELS' }
   | { type: 'CONNECT_GMAIL' }

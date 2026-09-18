@@ -1,4 +1,4 @@
-import type { AppMessage, AppResponse, Application, StatsData, AnalyticsData } from './lib/types';
+import type { AppMessage, AppResponse, Application, AnalyticsData, StatsData } from './lib/types';
 
 // ─── Messaging ────────────────────────────────────────────────────────────────
 
@@ -16,7 +16,6 @@ let allApps: Application[] = [];
 let currentFilter: string = 'all';
 let searchQuery: string = '';
 let selectedId: string | null = null;
-let currentView: 'applications' | 'graphs' = 'applications';
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 
@@ -29,10 +28,12 @@ const tableWrap     = document.getElementById('table-wrap')!;
 const tableBody     = document.getElementById('table-body')!;
 const searchInput   = document.getElementById('search-input') as HTMLInputElement;
 const totalCount    = document.getElementById('total-count')!;
+const syncMeta      = document.getElementById('sync-meta')!;
 const pageTitle     = document.getElementById('page-title')!;
 const statusBar     = document.getElementById('status-bar')!;
 const statusBarText = document.getElementById('status-bar-text')!;
 const btnSyncTop    = document.getElementById('btn-sync-top') as HTMLButtonElement;
+const btnStopSyncTop = document.getElementById('btn-stop-sync-top') as HTMLButtonElement;
 const syncSpinTop   = document.getElementById('sync-spinner-top')!;
 const detailPanel   = document.getElementById('detail-panel')!;
 const detailClose   = document.getElementById('detail-close')!;
@@ -81,7 +82,6 @@ function setStatusBar(text: string, type = 'info') {
 // ─── View switching ───────────────────────────────────────────────────────────
 
 function showView(view: 'applications' | 'graphs') {
-  currentView = view;
   viewApplications.style.display = view === 'applications' ? 'flex' : 'none';
   viewGraphs.style.display       = view === 'graphs' ? 'flex' : 'none';
   (viewApplications as HTMLElement).style.flexDirection = 'column';
@@ -232,23 +232,51 @@ function setFilter(filter: string) {
 // ─── Sync ─────────────────────────────────────────────────────────────────────
 
 async function runSync() {
-  btnSyncTop.disabled = true;
-  syncSpinTop.style.animation = 'spin 1s linear infinite';
+  setSyncing(true);
   setStatusBar('Syncing inbox…', 'info');
 
   const res = await send({ type: 'SYNC' });
 
-  btnSyncTop.disabled = false;
-  syncSpinTop.style.animation = '';
+  setSyncing(false);
 
   if (!res.success) {
     setStatusBar(res.error, 'error');
     return;
   }
 
-  const { newApplications } = res.data as { newApplications: number };
-  setStatusBar(`✅ Sync complete — ${newApplications} new application${newApplications !== 1 ? 's' : ''} found`, 'success');
+  const { newApplications, processed, errors, cancelled } = res.data as {
+    newApplications: number;
+    processed: number;
+    errors: number;
+    cancelled?: boolean;
+  };
+  if (cancelled) {
+    setStatusBar(`Sync stopped after checking ${processed} email${processed !== 1 ? 's' : ''}.`, 'info');
+    await loadApps();
+    return;
+  }
+  let message = `✅ Sync complete — ${newApplications} new application${newApplications !== 1 ? 's' : ''} found`;
+  if (processed > 0) message += ` after checking ${processed} email${processed !== 1 ? 's' : ''}`;
+  if (errors > 0) message += ` (${errors} error${errors !== 1 ? 's' : ''}; they will be retried next sync)`;
+  setStatusBar(message, errors > 0 ? 'error' : 'success');
   await loadApps();
+}
+
+function setSyncing(syncing: boolean) {
+  btnSyncTop.disabled = syncing;
+  syncSpinTop.style.animation = syncing ? 'spin 1s linear infinite' : '';
+  btnStopSyncTop.style.display = syncing ? 'block' : 'none';
+  btnStopSyncTop.disabled = false;
+  btnStopSyncTop.textContent = 'Stop';
+}
+
+async function stopSync() {
+  btnStopSyncTop.disabled = true;
+  btnStopSyncTop.textContent = 'Stopping…';
+  setStatusBar('Stopping after the current email…', 'info');
+
+  const res = await send({ type: 'CANCEL_SYNC' });
+  if (!res.success) setStatusBar(res.error, 'error');
 }
 
 // ─── Load ─────────────────────────────────────────────────────────────────────
@@ -264,6 +292,25 @@ async function loadApps() {
   allApps = res.data as Application[];
   renderBadges();
   renderTable();
+  await renderSyncMeta();
+}
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+async function renderSyncMeta() {
+  const res = await send({ type: 'GET_STATS' });
+  if (!res.success) return;
+
+  const { lastCheckAt, startDate } = res.data as StatsData;
+  const from = lastCheckAt ?? startDate;
+  syncMeta.textContent = [
+    lastCheckAt ? `Last synced ${formatDateTime(lastCheckAt)}` : 'Never synced',
+    from ? `next sync checks mail after ${formatDateTime(from)}` : 'next sync checks all inbox mail',
+  ].join(' · ');
 }
 
 // ─── Chart rendering ──────────────────────────────────────────────────────────
@@ -557,11 +604,28 @@ async function loadGraphs() {
   const tokenVals  = tokenDates.map(d => data.dailyRecords.find(r => r.date === d)?.tokens ?? 0);
   drawLineChart('canvas-tokens', 'chart-empty-3', tokenDates, tokenVals, '#f59e0b', 'rgba(245,158,11,0.2)');
 
-  // Chart 4 — top companies bar
-  const companies = data.topCompanies.slice(0, 8);
-  drawBarChart('canvas-companies', 'chart-empty-4',
-    companies.map(c => c.company),
-    companies.map(c => c.count),
+  // Chart 4 — applications per week (last 8 weeks, Monday start)
+  const weekStart = (d: Date) => {
+    const w = new Date(d);
+    w.setHours(0, 0, 0, 0);
+    w.setDate(w.getDate() - ((w.getDay() + 6) % 7));
+    return w;
+  };
+  const thisWeek = weekStart(new Date());
+  const weeks = Array.from({ length: 8 }, (_, i) => {
+    const w = new Date(thisWeek);
+    w.setDate(w.getDate() - (7 - i) * 7);
+    return w;
+  });
+  const weekCounts = weeks.map(() => 0);
+  for (const [day, count] of Object.entries(data.applicationsByDate)) {
+    const ws = weekStart(new Date(`${day}T00:00:00`)).getTime();
+    const idx = weeks.findIndex(w => w.getTime() === ws);
+    if (idx >= 0) weekCounts[idx] += count;
+  }
+  drawBarChart('canvas-weekly', 'chart-empty-4',
+    weeks.map(w => w.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+    weekCounts,
     '#10b981'
   );
 }
@@ -574,6 +638,7 @@ searchInput.addEventListener('input', () => {
 });
 
 btnSyncTop.addEventListener('click', runSync);
+btnStopSyncTop.addEventListener('click', stopSync);
 detailClose.addEventListener('click', closeDetail);
 
 document.querySelectorAll('.nav-item').forEach((el) => {
