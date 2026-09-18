@@ -68,6 +68,18 @@ export async function applyLabel(token: string, messageId: string, labelId: stri
   });
 }
 
+export async function modifyLabels(
+  token: string,
+  messageId: string,
+  addLabelIds: string[],
+  removeLabelIds: string[]
+): Promise<void> {
+  await req(token, `/messages/${messageId}/modify`, {
+    method: 'POST',
+    body: JSON.stringify({ addLabelIds, removeLabelIds }),
+  });
+}
+
 // ─── Labels ──────────────────────────────────────────────────────────────────
 
 export async function listLabels(token: string): Promise<GmailLabel[]> {

@@ -1,6 +1,7 @@
 // ─── Core Domain Types ──────────────────────────────────────────────────────
 
-export type JobStatus = 'applied' | 'interview' | 'assessment' | 'offer' | 'rejected';
+// 'review' = the classifier wasn't confident; the user decides in the dashboard
+export type JobStatus = 'applied' | 'interview' | 'assessment' | 'offer' | 'rejected' | 'review';
 
 export interface Application {
   id: string;        // Gmail message ID (unique)
@@ -12,6 +13,7 @@ export interface Application {
   subject: string;
   snippet: string;
   syncedAt: string;  // ISO date string when we processed it
+  suggestedStatus?: JobStatus; // classifier's best guess while status is 'review'
 }
 
 export interface LabelMap {
@@ -20,6 +22,7 @@ export interface LabelMap {
   assessment?: string;
   offer?: string;
   rejected?: string;
+  review?: string;
 }
 
 export interface StorageData {
@@ -54,6 +57,7 @@ export interface ClassifyResult {
   company: string;
   role: string;
   status: JobStatus;
+  confidence: number; // 0–1, the model's certainty about isJobRelated and status
 }
 
 // ─── Sync ───────────────────────────────────────────────────────────────────
@@ -107,6 +111,7 @@ export interface StatsData {
   assessment: number;
   offer: number;
   rejected: number;
+  review: number;
   total: number;
   lastCheckAt?: string;
   startDate?: string;
@@ -162,7 +167,9 @@ export type AppMessage =
   | { type: 'DISCONNECT_GMAIL' }
   | { type: 'GET_APPLICATIONS' }
   | { type: 'GET_EMAIL_BODY'; messageId: string }
-  | { type: 'GET_ANALYTICS' };
+  | { type: 'GET_ANALYTICS' }
+  | { type: 'SET_STATUS'; id: string; status: JobStatus }
+  | { type: 'DISMISS_APPLICATION'; id: string };
 
 export type AppResponse =
   | { success: true; data: SyncResult }

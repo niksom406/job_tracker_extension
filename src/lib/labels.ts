@@ -32,6 +32,10 @@ const LABEL_CONFIGS: Record<keyof LabelMap, LabelConfig> = {
     name: 'Job/Rejected',
     color: { backgroundColor: '#fb4c2f', textColor: '#ffffff' },
   },
+  review: {
+    name: 'Job/NeedsReview',
+    color: { backgroundColor: '#fad165', textColor: '#000000' },
+  },
 };
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────

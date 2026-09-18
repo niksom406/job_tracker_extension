@@ -16,6 +16,7 @@
   --assessment:   #a855f7;
   --offer:        #10b981;
   --rejected:     #ef4444;
+  --review:       #fad165;
   --sidebar-w:    220px;
   --radius:       12px;
   --radius-sm:    8px;
@@ -142,6 +143,8 @@ body {
 .nav-dot.assessment { background: var(--assessment); }
 .nav-dot.offer      { background: var(--offer);      }
 .nav-dot.rejected   { background: var(--rejected);   }
+.nav-dot.review     { background: var(--review);     }
+.review-badge       { color: #fde68a; }
 
 .sidebar-footer {
   padding: 16px 10px;
@@ -482,6 +485,7 @@ body {
 .badge-assessment { background: rgba(168,85,247,0.12);  color: #c084fc;  }
 .badge-offer      { background: rgba(16,185,129,0.12);  color: #34d399;  }
 .badge-rejected   { background: rgba(239,68,68,0.12);   color: #f87171;  }
+.badge-review     { background: rgba(250,209,101,0.14); color: #fde68a;  }
 
 /* ─── Status bar ──────────────────────────────────────────────── */
 .status-bar {
@@ -537,6 +541,55 @@ body {
   gap: 12px;
   margin-bottom: 12px;
 }
+
+/* Status picker in the detail panel */
+.detail-actions {
+  margin: 4px 0 16px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.detail-actions-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+
+.status-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.status-pick {
+  padding: 5px 10px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--border-2);
+  border-radius: 20px;
+  cursor: pointer;
+}
+
+.status-pick:hover:not(:disabled) { color: var(--text-1); border-color: var(--text-3); }
+.status-pick:disabled { opacity: 0.5; cursor: wait; }
+.status-pick.active {
+  color: #a5b4fc;
+  background: rgba(99,102,241,0.15);
+  border-color: rgba(99,102,241,0.5);
+}
+.status-pick.suggested {
+  color: #fde68a;
+  border-color: rgba(250,209,101,0.6);
+  box-shadow: 0 0 0 3px rgba(250,209,101,0.12);
+}
+.status-pick.dismiss {
+  margin-left: auto;
+  color: #f87171;
+  border-color: rgba(239,68,68,0.35);
+}
+.status-pick.dismiss:hover:not(:disabled) { background: rgba(239,68,68,0.1); color: #fca5a5; }
 
 .detail-company {
   font-size: 18px;

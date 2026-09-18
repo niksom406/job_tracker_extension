@@ -12,6 +12,7 @@ import {
   listMessageIds,
   getMessage,
   applyLabel,
+  modifyLabels,
   extractHeader,
   extractBody,
 } from './lib/gmail';
@@ -95,6 +96,10 @@ let activeSync: Promise<SyncResult> | null = null;
 let syncCancellationRequested = false;
 
 const IDLE_SYNC_STATUS: SyncStatus = { running: false, processed: 0, newApplications: 0, total: 0 };
+
+// Below this the classifier's answer is parked as "needs review" for the user
+// to decide, instead of being filed (and labelled) on a guess.
+const REVIEW_CONFIDENCE = 0.6;
 let currentSyncStatus: SyncStatus = { ...IDLE_SYNC_STATUS };
 
 // Written to storage so every open popup/dashboard tab can mirror the
@@ -141,8 +146,9 @@ async function runSyncOnce(): Promise<SyncResult> {
     );
   }
 
-  // Colour any Job/* labels created before colours were applied. Runs once.
-  if (!storage.labelColorsApplied) {
+  // Colour any Job/* labels created before colours were applied, and create
+  // labels added in later versions (e.g. Job/NeedsReview). Runs once each.
+  if (!storage.labelColorsApplied || !storage.labelMap.review) {
     try {
       const labelMap = await bootstrapLabels(token);
       await setStorage({ labelMap, labelColorsApplied: true });
@@ -277,7 +283,11 @@ async function runSyncOnce(): Promise<SyncResult> {
         break;
       }
 
-      if (!existingStatus && !classification.isJobRelated) {
+      // Low confidence in either direction goes to review: an unsure "no" may
+      // be a real application, an unsure "yes" may be a job alert.
+      const uncertain = !existingStatus && classification.confidence < REVIEW_CONFIDENCE;
+
+      if (!existingStatus && !classification.isJobRelated && !uncertain) {
         console.log(`[JobTracker] Not job-related: "${subject}"`);
         processedIds.add(id);
         processedMessageIds[id] = new Date().toISOString();
@@ -285,7 +295,9 @@ async function runSyncOnce(): Promise<SyncResult> {
         continue;
       }
 
-      const status = existingStatus ?? classification.status;
+      const status: JobStatus = existingStatus ?? (uncertain ? 'review' : classification.status);
+      const suggestedStatus =
+        status === 'review' && classification.isJobRelated ? classification.status : undefined;
 
       // Apply Gmail label (skip if it's already labeled)
       if (!existingStatus) {
@@ -306,6 +318,7 @@ async function runSyncOnce(): Promise<SyncResult> {
         subject,
         snippet,
         syncedAt: new Date().toISOString(),
+        ...(suggestedStatus && { suggestedStatus }),
       };
       processedIds.add(id);
       processedMessageIds[id] = new Date().toISOString();
@@ -317,7 +330,8 @@ async function runSyncOnce(): Promise<SyncResult> {
       // rather than after the whole run finishes.
       await persistProgress();
       console.log(
-        `[JobTracker] ✅ ${classification.company} – ${classification.role} (${classification.status})`
+        `[JobTracker] ✅ ${classification.company} – ${classification.role} (${status}` +
+        `${status === 'review' ? `, suggested ${classification.status}, confidence ${classification.confidence}` : ''})`
       );
 
       // Respect rate limits
@@ -371,7 +385,9 @@ async function buildAnalytics(): Promise<AnalyticsData> {
   const statusBreakdown: Record<string, number> = {};
 
   for (const app of apps) {
-    if (typeof app.emailDate === 'string') {
+    // Unconfirmed items are not applications yet; keep them out of the
+    // timeline charts but show them as their own slice in the status donut.
+    if (app.status !== 'review' && typeof app.emailDate === 'string') {
       const day = app.emailDate.slice(0, 10);
       applicationsByDate[day] = (applicationsByDate[day] ?? 0) + 1;
     }
@@ -506,6 +522,46 @@ async function handleMessage(msg: AppMessage): Promise<AppResponse> {
     case 'GET_ANALYTICS': {
       const analytics = await buildAnalytics();
       return { success: true, data: analytics };
+    }
+
+    // ── User corrects a status (dashboard detail panel) ─────────────────────
+    case 'SET_STATUS': {
+      const storage = await getStorage();
+      const app = storage.applications[msg.id];
+      if (!app) return { success: false, error: 'Application not found' };
+
+      const token = await getAuthToken(false);
+      const allJobLabels = Object.values(storage.labelMap).filter((v): v is string => !!v);
+      const target = getLabelId(storage.labelMap, msg.status);
+      await modifyLabels(
+        token,
+        msg.id,
+        target ? [target] : [],
+        allJobLabels.filter((l) => l !== target)
+      );
+
+      app.status = msg.status;
+      delete app.suggestedStatus;
+      await setStorage({ applications: storage.applications });
+      return { success: true, data: null };
+    }
+
+    // ── User says "not a job email": drop it and never re-check it ──────────
+    case 'DISMISS_APPLICATION': {
+      const storage = await getStorage();
+      if (!storage.applications[msg.id]) return { success: false, error: 'Application not found' };
+
+      const token = await getAuthToken(false);
+      const allJobLabels = Object.values(storage.labelMap).filter((v): v is string => !!v);
+      await modifyLabels(token, msg.id, [], allJobLabels);
+
+      delete storage.applications[msg.id];
+      const processedMessageIds = {
+        ...(storage.processedMessageIds ?? {}),
+        [msg.id]: new Date().toISOString(),
+      };
+      await setStorage({ applications: storage.applications, processedMessageIds });
+      return { success: true, data: null };
     }
 
     default:

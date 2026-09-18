@@ -1,4 +1,4 @@
-import type { AppMessage, AppResponse, Application, AnalyticsData, StatsData, SyncStatus, SetupStatus } from './lib/types';
+import type { AppMessage, AppResponse, Application, AnalyticsData, StatsData, SyncStatus, SetupStatus, JobStatus } from './lib/types';
 import { SETUP_STEPS, RECONNECT_MESSAGE } from './lib/setup';
 
 // ─── Messaging ────────────────────────────────────────────────────────────────
@@ -51,6 +51,8 @@ const detailDate    = document.getElementById('detail-date')!;
 const detailSubject = document.getElementById('detail-subject')!;
 const detailBodyWrap = document.getElementById('detail-body-loading')!;
 const detailBody    = document.getElementById('detail-body')!;
+const detailActionsLabel = document.getElementById('detail-actions-label')!;
+const statusPicker  = document.getElementById('status-picker')!;
 
 // Badge elements
 const badges: Record<string, HTMLElement | null> = {
@@ -60,6 +62,7 @@ const badges: Record<string, HTMLElement | null> = {
   assessment: document.getElementById('badge-assessment'),
   offer:      document.getElementById('badge-offer'),
   rejected:   document.getElementById('badge-rejected'),
+  review:     document.getElementById('badge-review'),
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,6 +77,7 @@ function badgeClass(status: string): string {
 }
 
 function statusLabel(status: string): string {
+  if (status === 'review') return 'Needs review';
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
@@ -132,6 +136,7 @@ function renderBadges() {
     assessment: allApps.filter(a => a.status === 'assessment').length,
     offer:      allApps.filter(a => a.status === 'offer').length,
     rejected:   allApps.filter(a => a.status === 'rejected').length,
+    review:     allApps.filter(a => a.status === 'review').length,
   };
 
   for (const [key, el] of Object.entries(badges)) {
@@ -188,12 +193,7 @@ async function openDetail(app: Application) {
   selectedId = app.id;
   renderTable();
 
-  detailCompany.textContent = app.company;
-  detailRole.textContent = app.role;
-  detailDate.textContent = formatDate(app.emailDate);
-  detailSubject.textContent = app.subject;
-  detailStatus.className = badgeClass(app.status);
-  detailStatus.textContent = statusLabel(app.status);
+  renderDetailHeader(app);
 
   detailBodyWrap.style.display = 'flex';
   detailBody.style.display = 'none';
@@ -217,6 +217,73 @@ function closeDetail() {
   renderTable();
 }
 
+function renderDetailHeader(app: Application) {
+  detailCompany.textContent = app.company;
+  detailRole.textContent = app.role;
+  detailDate.textContent = formatDate(app.emailDate);
+  detailSubject.textContent = app.subject;
+  detailStatus.className = badgeClass(app.status);
+  detailStatus.textContent = statusLabel(app.status);
+  renderStatusPicker(app);
+}
+
+const PICKABLE_STATUSES: JobStatus[] = ['applied', 'interview', 'assessment', 'offer', 'rejected'];
+
+function renderStatusPicker(app: Application) {
+  detailActionsLabel.textContent = app.status === 'review'
+    ? 'The classifier wasn\'t sure about this one — pick its status:'
+    : 'Change status:';
+
+  statusPicker.innerHTML = '';
+  for (const s of PICKABLE_STATUSES) {
+    const b = document.createElement('button');
+    const suggested = app.suggestedStatus === s;
+    b.className = 'status-pick' + (app.status === s ? ' active' : '') + (suggested ? ' suggested' : '');
+    b.textContent = suggested ? `${statusLabel(s)} · suggested` : statusLabel(s);
+    b.title = 'Sets the status here and swaps the Gmail label';
+    b.addEventListener('click', () => changeStatus(app, s));
+    statusPicker.appendChild(b);
+  }
+  const dismiss = document.createElement('button');
+  dismiss.className = 'status-pick dismiss';
+  dismiss.textContent = 'Not a job email';
+  dismiss.title = 'Removes it from the list and the Gmail label; it will not be checked again';
+  dismiss.addEventListener('click', () => dismissApplication(app));
+  statusPicker.appendChild(dismiss);
+}
+
+function setPickerBusy(busy: boolean) {
+  statusPicker.querySelectorAll('button').forEach((b) => { (b as HTMLButtonElement).disabled = busy; });
+}
+
+async function changeStatus(app: Application, status: JobStatus) {
+  if (app.status === status) return;
+  setPickerBusy(true);
+  const res = await send({ type: 'SET_STATUS', id: app.id, status });
+  if (!res.success) {
+    setStatusBar(res.error, 'error');
+    setPickerBusy(false);
+    return;
+  }
+  setStatusBar(`Marked as ${statusLabel(status)} — Gmail label updated`, 'success');
+  await loadApps();
+  const updated = allApps.find((a) => a.id === app.id);
+  if (updated) renderDetailHeader(updated);
+}
+
+async function dismissApplication(app: Application) {
+  setPickerBusy(true);
+  const res = await send({ type: 'DISMISS_APPLICATION', id: app.id });
+  if (!res.success) {
+    setStatusBar(res.error, 'error');
+    setPickerBusy(false);
+    return;
+  }
+  setStatusBar('Removed — Gmail label cleared and it won\'t be checked again', 'success');
+  closeDetail();
+  await loadApps();
+}
+
 // ─── Nav filter ───────────────────────────────────────────────────────────────
 
 function setFilter(filter: string) {
@@ -230,6 +297,7 @@ function setFilter(filter: string) {
     assessment: 'Assessments',
     offer: 'Offers',
     rejected: 'Rejected',
+    review: 'Needs review',
   };
 
   pageTitle.textContent = labels[filter] ?? 'Applications';
@@ -400,6 +468,7 @@ const CHART_COLORS = {
   assessment: '#8b5cf6',
   offer:      '#10b981',
   rejected:   '#ef4444',
+  review:     '#fad165',
 };
 
 function getCanvasCtx(id: string): CanvasRenderingContext2D | null {
