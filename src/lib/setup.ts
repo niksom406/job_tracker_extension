@@ -20,3 +20,9 @@ export function getSetupStatus(storage: Partial<StorageData>): SetupStatus {
 export function missingSetupSteps(setup: SetupStatus): string[] {
   return SETUP_STEPS.filter((s) => !setup[s.key]).map((s) => s.label);
 }
+
+/** Shown wherever Gmail needs reconnecting after Google's 7-day testing-mode expiry. */
+export const RECONNECT_MESSAGE =
+  'Your Gmail sign-in has expired. While JobTracker is in Google\'s testing mode, ' +
+  'sign-ins last 7 days — open Settings and click Connect Gmail to carry on. ' +
+  'Your applications and sync progress are kept.';

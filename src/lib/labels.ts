@@ -1,5 +1,5 @@
 import type { LabelMap, GmailLabelColor } from './types';
-import { listLabels, createLabel } from './gmail';
+import { listLabels, createLabel, updateLabelColor } from './gmail';
 
 // ─── Label definitions ────────────────────────────────────────────────────────
 
@@ -8,26 +8,29 @@ interface LabelConfig {
   color: GmailLabelColor;
 }
 
+// Gmail only accepts colours from its fixed label palette; anything else is
+// rejected with a 400. These are the palette entries closest to the app's
+// status colours.
 const LABEL_CONFIGS: Record<keyof LabelMap, LabelConfig> = {
   applied: {
     name: 'Job/Applied',
-    color: { backgroundColor: '#1a73e8', textColor: '#ffffff' },
+    color: { backgroundColor: '#4a86e8', textColor: '#ffffff' },
   },
   interview: {
     name: 'Job/Interview',
-    color: { backgroundColor: '#f29900', textColor: '#000000' },
+    color: { backgroundColor: '#ffad47', textColor: '#000000' },
   },
   assessment: {
     name: 'Job/Assessment',
-    color: { backgroundColor: '#9334e6', textColor: '#ffffff' },
+    color: { backgroundColor: '#a479e2', textColor: '#ffffff' },
   },
   offer: {
     name: 'Job/Offer',
-    color: { backgroundColor: '#188038', textColor: '#ffffff' },
+    color: { backgroundColor: '#16a766', textColor: '#ffffff' },
   },
   rejected: {
     name: 'Job/Rejected',
-    color: { backgroundColor: '#d93025', textColor: '#ffffff' },
+    color: { backgroundColor: '#fb4c2f', textColor: '#ffffff' },
   },
 };
 
@@ -48,7 +51,14 @@ export async function bootstrapLabels(token: string): Promise<LabelMap> {
     const found = existing.find((l) => l.name === config.name);
     if (found) {
       labelMap[key] = found.id;
-      console.log(`[Labels] Found existing: ${config.name} → ${found.id}`);
+      // Labels that already existed were never coloured (or carry old, invalid
+      // colours); bring them in line so the inbox is scannable at a glance.
+      try {
+        await updateLabelColor(token, found.id, config.color);
+        console.log(`[Labels] Found existing: ${config.name} → ${found.id} (colour updated)`);
+      } catch (err) {
+        console.warn(`[Labels] Could not colour ${config.name}:`, err);
+      }
     } else {
       const created = await createLabel(token, config.name, config.color);
       labelMap[key] = created.id;

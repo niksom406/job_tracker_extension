@@ -320,6 +320,17 @@ html, body {
 .setup-list li.done { color: #34d399; }
 .setup-list li.todo { color: #fbbf24; }
 
+.setup-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #fbbf24;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.3);
+}
+
 .state-title {
   font-size: 15px;
   font-weight: 600;

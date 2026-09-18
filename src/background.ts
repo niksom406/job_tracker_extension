@@ -1,5 +1,5 @@
 import type { AppMessage, AppResponse, SyncResult, StatsData, AnalyticsData, DailyTokenRecord, JobStatus, SyncStatus } from './lib/types';
-import { getSetupStatus, missingSetupSteps } from './lib/setup';
+import { getSetupStatus, missingSetupSteps, RECONNECT_MESSAGE } from './lib/setup';
 import {
   getStorage,
   setStorage,
@@ -42,6 +42,18 @@ function getAuthToken(interactive: boolean, timeoutMs = 30_000): Promise<string>
       }
     });
   });
+}
+
+// Chrome reports an expired or revoked grant with this wording; anything else
+// (offline, timeout, not signed in to Chrome) is transient and must not
+// disconnect the user.
+function isGrantRevokedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /not granted or revoked|invalid_grant|revoked/i.test(msg);
+}
+
+async function markGmailExpired(): Promise<void> {
+  await setStorage({ isConnected: false, gmailReconnectRequired: true });
 }
 
 function removeCachedToken(token: string): Promise<void> {
@@ -118,10 +130,26 @@ async function runSyncOnce(): Promise<SyncResult> {
   let token: string;
   try {
     token = await getAuthToken(false);
-  } catch {
-    // Token expired or revoked — mark as disconnected
-    await setStorage({ isConnected: false });
-    throw new Error('Gmail session expired. Reconnect in Settings.');
+  } catch (err) {
+    if (isGrantRevokedError(err)) {
+      await markGmailExpired();
+      throw new Error(RECONNECT_MESSAGE);
+    }
+    throw new Error(
+      `Could not reach Google sign-in (${err instanceof Error ? err.message : String(err)}). ` +
+      'Check you are online and signed in to Chrome, then try again.'
+    );
+  }
+
+  // Colour any Job/* labels created before colours were applied. Runs once.
+  if (!storage.labelColorsApplied) {
+    try {
+      const labelMap = await bootstrapLabels(token);
+      await setStorage({ labelMap, labelColorsApplied: true });
+      storage.labelMap = labelMap;
+    } catch (err) {
+      console.warn('[JobTracker] Label colour update skipped:', err);
+    }
   }
 
   // Gmail's YYYY/MM/DD search is day-granular and based on Gmail's timezone,
@@ -285,6 +313,9 @@ async function runSyncOnce(): Promise<SyncResult> {
 
       result.newApplications++;
       await publishSyncStatus({ newApplications: result.newApplications });
+      // Write it out now so open dashboards/popups can show it immediately
+      // rather than after the whole run finishes.
+      await persistProgress();
       console.log(
         `[JobTracker] ✅ ${classification.company} – ${classification.role} (${classification.status})`
       );
@@ -381,7 +412,11 @@ async function handleMessage(msg: AppMessage): Promise<AppResponse> {
     case 'CONNECT_GMAIL': {
       const token = await getAuthToken(true);
       const profile = await getUserProfile(token);
-      await setStorage({ isConnected: true, userEmail: profile.emailAddress });
+      await setStorage({
+        isConnected: true,
+        userEmail: profile.emailAddress,
+        gmailReconnectRequired: false,
+      });
       return { success: true, data: null };
     }
 
@@ -421,6 +456,21 @@ async function handleMessage(msg: AppMessage): Promise<AppResponse> {
     case 'GET_STATS': {
       const storage = await getStorage();
       const counts = await getStats();
+
+      // Detect the 7-day expiry when the popup opens, so the user sees the
+      // reconnect notice up front instead of a failed sync later.
+      if (storage.isConnected) {
+        try {
+          await getAuthToken(false, 5_000);
+        } catch (err) {
+          if (isGrantRevokedError(err)) {
+            await markGmailExpired();
+            storage.isConnected = false;
+            storage.gmailReconnectRequired = true;
+          }
+        }
+      }
+
       const setup = getSetupStatus(storage);
       const data: StatsData = {
         ...counts,
@@ -433,6 +483,7 @@ async function handleMessage(msg: AppMessage): Promise<AppResponse> {
         syncStatus: activeSync ? currentSyncStatus : { ...IDLE_SYNC_STATUS },
         setup,
         setupComplete: missingSetupSteps(setup).length === 0,
+        reconnectRequired: !!storage.gmailReconnectRequired && !storage.isConnected,
       };
       return { success: true, data };
     }

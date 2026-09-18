@@ -1,6 +1,7 @@
 import * as esbuild from 'esbuild';
 
 const isWatch = process.argv.includes('--watch');
+const isProduction = process.argv.includes('--production');
 
 const config = {
   entryPoints: [
@@ -13,7 +14,10 @@ const config = {
   outdir: 'dist',
   format: /** @type {const} */ ('esm'),
   target: 'chrome112',
-  sourcemap: 'inline',
+  // Inline maps embed the TypeScript source in the shipped bundle; strip them
+  // (and minify) for the Web Store package.
+  sourcemap: isProduction ? false : 'inline',
+  minify: isProduction,
   logLevel: /** @type {const} */ ('info'),
 };
 

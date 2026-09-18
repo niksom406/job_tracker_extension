@@ -1,5 +1,5 @@
 import type { AppMessage, AppResponse, StatsData, SyncStatus, SetupStatus } from './lib/types';
-import { SETUP_STEPS } from './lib/setup';
+import { SETUP_STEPS, RECONNECT_MESSAGE } from './lib/setup';
 
 // ─── Messaging helper ─────────────────────────────────────────────────────────
 
@@ -15,6 +15,7 @@ function send(msg: AppMessage): Promise<AppResponse> {
 
 const setupPanel     = document.getElementById('setup-panel')!;
 const setupList      = document.getElementById('setup-list')!;
+const setupNote      = document.getElementById('setup-note')!;
 const connectedView  = document.getElementById('connected-view')!;
 const userEmailEl    = document.getElementById('user-email')!;
 const statApplied    = document.getElementById('stat-applied')!;
@@ -95,16 +96,16 @@ function applySyncStatus(s: SyncStatus) {
   setSyncing(s.running);
   if (!s.running) return;
   syncLabel.textContent = s.total > 0 ? `Syncing… ${s.processed}/${s.total}` : 'Syncing…';
-  if (!syncInitiatedHere) {
-    const found = s.newApplications > 0 ? ` · ${s.newApplications} new so far` : '';
-    showStatus(`Sync in progress — ${s.processed}/${s.total} emails checked${found}`, 'info');
-  }
+  const found = s.newApplications > 0 ? ` · ${s.newApplications} new so far` : '';
+  showStatus(`Syncing — ${s.processed}/${s.total} emails checked${found}`, 'info');
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
 
-function renderSetup(setup: SetupStatus, complete: boolean) {
+function renderSetup(setup: SetupStatus, complete: boolean, reconnectRequired: boolean) {
   setupPanel.style.display = complete ? 'none' : 'flex';
+  setupNote.textContent = reconnectRequired ? RECONNECT_MESSAGE : '';
+  setupNote.style.display = reconnectRequired ? 'block' : 'none';
   setupList.innerHTML = SETUP_STEPS
     .map((step) => {
       const done = setup[step.key];
@@ -148,7 +149,7 @@ async function loadStats() {
 
   const data = res.data as StatsData;
   setupComplete = data.setupComplete;
-  renderSetup(data.setup, data.setupComplete);
+  renderSetup(data.setup, data.setupComplete, data.reconnectRequired);
 
   connectedView.style.display = data.isConnected ? 'block' : 'none';
   if (data.isConnected) renderStats(data);
@@ -209,8 +210,18 @@ async function handleStopSync() {
 
 // ─── Live sync updates from other windows ─────────────────────────────────────
 
+let statsRefreshTimer: number | undefined;
+
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !changes.syncStatus) return;
+  if (area !== 'local') return;
+
+  // Keep the counts live as the sync saves applications, not just at the end.
+  if (changes.applications) {
+    clearTimeout(statsRefreshTimer);
+    statsRefreshTimer = window.setTimeout(loadStats, 300);
+  }
+
+  if (!changes.syncStatus) return;
   const s = changes.syncStatus.newValue as SyncStatus | undefined;
   if (!s) return;
 

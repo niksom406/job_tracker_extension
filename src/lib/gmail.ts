@@ -91,6 +91,17 @@ export async function createLabel(
   });
 }
 
+export async function updateLabelColor(
+  token: string,
+  labelId: string,
+  color: GmailLabelColor
+): Promise<void> {
+  await req(token, `/labels/${labelId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ color }),
+  });
+}
+
 // ─── Parsing helpers ──────────────────────────────────────────────────────────
 
 export function extractHeader(message: GmailMessage, name: string): string {
