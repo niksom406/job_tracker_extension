@@ -48,6 +48,10 @@ export interface StorageData {
   gmailReconnectRequired?: boolean;
   // One-time flag: existing Job/* labels have been given the palette colours
   labelColorsApplied?: boolean;
+  // One-time flag: items parked as "review" by the old classifier were re-run
+  reviewRecheckDone?: boolean;
+  // Bumped in background.ts when classification changes; triggers a re-scan
+  classifierVersion?: number;
 }
 
 // ─── AI Classification ──────────────────────────────────────────────────────

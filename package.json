@@ -8,6 +8,7 @@
     "build:prod": "node build.js --production",
     "dev": "node build.js --watch",
     "clean": "rm -rf dist",
+    "test:classify": "esbuild scripts/classify-test.ts --bundle --platform=node --target=node22 --outfile=.tmp/classify-test.js --log-level=warning && node .tmp/classify-test.js",
     "package": "npm run build:prod && rm -f jobtracker.zip && zip -r jobtracker.zip manifest.json assets/icon16.png assets/icon32.png assets/icon48.png assets/icon128.png src/*.html src/*.css dist/*.js"
   },
   "devDependencies": {

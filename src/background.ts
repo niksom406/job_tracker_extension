@@ -97,9 +97,14 @@ let syncCancellationRequested = false;
 
 const IDLE_SYNC_STATUS: SyncStatus = { running: false, processed: 0, newApplications: 0, total: 0 };
 
-// Below this the classifier's answer is parked as "needs review" for the user
-// to decide, instead of being filed (and labelled) on a guess.
+// Below this, a job-related email is parked as "needs review" for the user to
+// decide instead of being filed on a guess. Never applies to non-job emails:
+// those get no label at all.
 const REVIEW_CONFIDENCE = 0.6;
+
+// Bump this whenever classification logic changes materially. Emails judged
+// "not job" by an older version are otherwise cached and never looked at again.
+const CLASSIFIER_VERSION = 5;
 let currentSyncStatus: SyncStatus = { ...IDLE_SYNC_STATUS };
 
 // Written to storage so every open popup/dashboard tab can mirror the
@@ -121,6 +126,21 @@ async function runSyncOnce(): Promise<SyncResult> {
   const storage = await getStorage();
   const result: SyncResult = { processed: 0, newApplications: 0, errors: 0, tokensUsed: 0 };
   const syncStartedAt = new Date().toISOString();
+
+  // Classifier changed since the last run: forget which emails were judged
+  // "not job" and rewind the checkpoint to the start date so the whole window
+  // is listed again. Applications already found are kept and skipped.
+  const classifierUpdated = (storage.classifierVersion ?? 0) < CLASSIFIER_VERSION;
+  if (classifierUpdated) {
+    console.log(
+      `[JobTracker] Classifier updated (v${storage.classifierVersion ?? 0} → v${CLASSIFIER_VERSION}) — re-checking the whole window`
+    );
+    storage.processedMessageIds = {};
+    storage.lastCheckAt = undefined;
+    await new Promise<void>((r) => chrome.storage.local.remove('lastCheckAt', () => r()));
+    await setStorage({ processedMessageIds: {}, classifierVersion: CLASSIFIER_VERSION });
+  }
+
   const processedMessageIds = { ...(storage.processedMessageIds ?? {}) };
   const processedIds = new Set([
     ...Object.keys(storage.applications),
@@ -221,7 +241,57 @@ async function runSyncOnce(): Promise<SyncResult> {
     unsavedSinceFlush = 0;
   };
 
-  for (const id of messageIds) {
+  // After a classifier update, treat the user's Gmail labels as the truth for
+  // what is already stored: a label they removed by hand means "this was
+  // wrong" (drop it and never re-check it); a label they changed is adopted.
+  // Gmail-only calls, nothing is sent to OpenAI here.
+  if (classifierUpdated) {
+    let dropped = 0;
+    let adopted = 0;
+    for (const [appId, app] of Object.entries(storage.applications)) {
+      if (app.status === 'review') continue; // re-classified below instead
+      try {
+        const m = await getMessage(token, appId);
+        const labelled = m.labelIds
+          ?.map((lid) => labelIdToStatus.get(lid))
+          .find((s): s is JobStatus => s !== undefined);
+        if (!labelled) {
+          delete storage.applications[appId];
+          processedIds.add(appId);
+          processedMessageIds[appId] = new Date().toISOString();
+          dropped++;
+        } else if (labelled !== app.status) {
+          app.status = labelled;
+          delete app.suggestedStatus;
+          adopted++;
+        }
+      } catch (err) {
+        console.warn(`[JobTracker] Could not reconcile ${appId}:`, err);
+      }
+    }
+    if (dropped || adopted) {
+      console.log(`[JobTracker] Reconciled with Gmail labels: ${dropped} removed by you, ${adopted} status changed by you`);
+      await persistProgress();
+    }
+  }
+
+  // One-time re-check of everything parked as "review" by the previous
+  // classifier: run it through the new two-stage logic even if it is older
+  // than the cutoff or already labelled, and clear anything that is not job mail.
+  const forceIds = new Set<string>();
+  if (!storage.reviewRecheckDone) {
+    for (const [appId, app] of Object.entries(storage.applications)) {
+      if (app.status === 'review') {
+        forceIds.add(appId);
+        processedIds.delete(appId);
+      }
+    }
+    if (forceIds.size > 0) console.log(`[JobTracker] Re-checking ${forceIds.size} item(s) marked for review`);
+  }
+  const idsToCheck = [...new Set([...messageIds, ...forceIds])];
+  const allJobLabels = Object.values(storage.labelMap).filter((v): v is string => !!v);
+
+  for (const id of idsToCheck) {
     if (syncCancellationRequested) {
       result.cancelled = true;
       console.log('[JobTracker] Sync stopped by user.');
@@ -242,7 +312,7 @@ async function runSyncOnce(): Promise<SyncResult> {
       if (!Number.isFinite(receivedAt)) {
         throw new Error('Gmail returned a message with an invalid internal date.');
       }
-      if (cutoff !== undefined && receivedAt < cutoff) {
+      if (cutoff !== undefined && receivedAt < cutoff && !forceIds.has(id)) {
         console.warn(
           `[JobTracker] Ignoring message ${id} received ${new Date(receivedAt).toISOString()} — before the cutoff.`
         );
@@ -258,15 +328,23 @@ async function runSyncOnce(): Promise<SyncResult> {
       console.log(`[JobTracker] Checking ${id} received ${emailDate}`);
 
       // Already labeled from a previous sync/install? Trust that status.
-      const existingStatus = msg.labelIds
-        ?.map((lid) => labelIdToStatus.get(lid))
-        .find((s): s is JobStatus => s !== undefined);
+      const existingStatus = forceIds.has(id)
+        ? undefined // re-deciding: ignore the label the old classifier applied
+        : msg.labelIds
+            ?.map((lid) => labelIdToStatus.get(lid))
+            .find((s): s is JobStatus => s !== undefined);
 
       result.processed++;
       await publishSyncStatus({ processed: result.processed });
 
       // Classify with OpenAI (still needed for company/role extraction)
-      const classification = await classifyEmail(storage.openAiKey!, subject, snippet);
+      const classification = await classifyEmail(
+        storage.openAiKey!,
+        subject,
+        extractHeader(msg, 'From'),
+        snippet,
+        extractBody(msg).replace(/\s+/g, ' ').trim().slice(0, 2000)
+      );
 
       // Track token usage
       if (classification.tokensUsed > 0) {
@@ -283,12 +361,17 @@ async function runSyncOnce(): Promise<SyncResult> {
         break;
       }
 
-      // Low confidence in either direction goes to review: an unsure "no" may
-      // be a real application, an unsure "yes" may be a job alert.
-      const uncertain = !existingStatus && classification.confidence < REVIEW_CONFIDENCE;
+      // Only a job-related email the extractor can't type confidently goes to
+      // review. A "no" is final: no label, no row.
+      const uncertain =
+        !existingStatus && classification.isJobRelated && classification.confidence < REVIEW_CONFIDENCE;
 
-      if (!existingStatus && !classification.isJobRelated && !uncertain) {
+      if (!existingStatus && !classification.isJobRelated) {
         console.log(`[JobTracker] Not job-related: "${subject}"`);
+        if (forceIds.has(id)) {
+          await modifyLabels(token, id, [], allJobLabels);
+          delete storage.applications[id];
+        }
         processedIds.add(id);
         processedMessageIds[id] = new Date().toISOString();
         unsavedSinceFlush++;
@@ -299,10 +382,13 @@ async function runSyncOnce(): Promise<SyncResult> {
       const suggestedStatus =
         status === 'review' && classification.isJobRelated ? classification.status : undefined;
 
-      // Apply Gmail label (skip if it's already labeled)
+      // Apply Gmail label (skip if it's already labeled). Re-checked items get
+      // their old label swapped rather than stacked.
       if (!existingStatus) {
         const labelId = getLabelId(storage.labelMap, status);
-        if (labelId) {
+        if (forceIds.has(id)) {
+          await modifyLabels(token, id, labelId ? [labelId] : [], allJobLabels.filter((l) => l !== labelId));
+        } else if (labelId) {
           await applyLabel(token, id, labelId);
         }
       }
@@ -324,8 +410,10 @@ async function runSyncOnce(): Promise<SyncResult> {
       processedMessageIds[id] = new Date().toISOString();
       unsavedSinceFlush++;
 
-      result.newApplications++;
-      await publishSyncStatus({ newApplications: result.newApplications });
+      if (!forceIds.has(id)) {
+        result.newApplications++;
+        await publishSyncStatus({ newApplications: result.newApplications });
+      }
       // Write it out now so open dashboards/popups can show it immediately
       // rather than after the whole run finishes.
       await persistProgress();
@@ -348,6 +436,10 @@ async function runSyncOnce(): Promise<SyncResult> {
   }
 
   await persistProgress();
+
+  if (!storage.reviewRecheckDone && !syncCancellationRequested) {
+    await setStorage({ reviewRecheckDone: true });
+  }
 
   if (syncCancellationRequested) result.cancelled = true;
   if (!result.cancelled) {
