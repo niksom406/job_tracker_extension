@@ -147,7 +147,7 @@
         </p>
         <p class="hint">
           <strong>What it costs:</strong> every inbox email in your sync window is sent to gpt-4o-mini once
-          (subject plus a short snippet — never the full body) so it can decide whether it's job-related.
+          (subject, sender, and the first 2,000 characters of the email text — never attachments) so it can decide whether it's job-related and what kind of email it is.
           That's roughly 300–500 tokens per email, about $0.10 per 1,000 emails at typical gpt-4o-mini rates
           (check <a href="https://openai.com/api/pricing" target="_blank" class="link">OpenAI's pricing page</a> for the current figure).
           Each email is classified only once; already-checked emails are skipped on later syncs.

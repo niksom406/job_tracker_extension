@@ -13,7 +13,7 @@ JobTracker is a Chrome extension that finds job-application emails in your Gmail
 
 It never sends email on your behalf, deletes messages, or changes anything other than adding those labels.
 
-**OpenAI.** To decide whether an email is job-related, the extension sends the email's **subject line and the first 500 characters of Gmail's snippet** — never the full body, attachments, or your address — to the OpenAI API using an API key you supply. This is governed by [OpenAI's API data-usage terms](https://openai.com/policies/api-data-usage-policies), under which API inputs are not used to train models.
+**OpenAI.** To decide whether an email is job-related and what kind it is, the extension sends the email's **subject line, sender address, and the first 2,000 characters of its text** — never attachments — to the OpenAI API using an API key you supply. Emails the first check judges not job-related are never sent for the second, more detailed step. This is governed by [OpenAI's API data-usage terms](https://openai.com/policies/api-data-usage-policies), under which API inputs are not used to train models.
 
 ## What is stored, and where
 
