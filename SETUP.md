@@ -32,22 +32,26 @@ You need a **Google Cloud OAuth client ID** to let the extension read your Gmail
    - Add your email as test user
    - Scopes: Add `gmail.modify`
 4. Back to Create Credentials:
-   - Application type: **Chrome App**
+   - Application type: **Chrome Extension**
    - Name: `JobTracker`
-   - Application ID: (leave blank for now — see Step 2)
+   - Item ID: your extension's ID (see 1d). If you're not sure yet, finish 1d first and come back.
 
 ### 1d. Get the Extension ID
 
-1. Open `chrome://extensions`
-2. Enable **Developer mode** (top-right toggle)
-3. Click **"Load unpacked"** → select the `job-tracker-extension/` folder
-4. Copy the **Extension ID** shown (e.g. `abcdefghijklmnopqrstuvwxyz123456`)
+> **Using your own copy?** `manifest.json` contains a `"key"` field that pins the extension ID to the published build. Delete that line (and use your own client ID in Step 2), otherwise Google sign-in will be tied to someone else's OAuth client.
+
+1. Run `npm install && npm run build`
+2. Open `chrome://extensions`
+3. Enable **Developer mode** (top-right toggle)
+4. Click **"Load unpacked"** → select the `job-tracker-extension/` folder
+5. Copy the **Extension ID** shown (e.g. `abcdefghijklmnopqrstuvwxyzabcdef`)
 
 ### 1e. Finish OAuth Setup
 
 1. Back in Google Cloud → Credentials → Edit your OAuth client
-2. Paste the extension ID as **Application ID**
-3. Copy the **Client ID** (looks like `123456789.apps.googleusercontent.com`)
+2. Paste the extension ID as **Item ID** and save (changes can take a few minutes to apply)
+3. Copy the **Client ID** (looks like `123456789-abcdef.apps.googleusercontent.com`)
+4. Under **OAuth consent screen → Test users**, add the Gmail address you'll sign in with
 
 ---
 
@@ -94,7 +98,9 @@ Then in Settings:
 | **1. Connect Gmail** | Click "Connect Gmail" → sign in with Google → grant permissions |
 | **2. OpenAI API Key** | Paste your key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys) → Save |
 | **3. Start Date** | Pick a date to sync from (e.g. 3 months ago) → Save |
-| **4. Create Labels** | Click "Set Up Gmail Labels" → 5 labels appear in your Gmail |
+| **4. Create Labels** | Click "Set Up Gmail Labels" → 6 colour-coded `Job/*` labels appear in your Gmail |
+
+Syncing stays disabled until all four steps are done, and the popup and dashboard list whatever is still missing.
 
 ---
 
@@ -110,14 +116,14 @@ Then in Settings:
 ## 💰 Cost Estimate
 
 - **Gmail API**: Free (within generous quotas)
-- **OpenAI gpt-4o-mini**: ~$0.001 per email → 1,000 emails ≈ $0.15
+- **OpenAI gpt-4o-mini**: roughly $0.10–0.15 per 1,000 emails. Every email is checked once; non-job emails stop after a tiny yes/no call. Actual usage is shown on the dashboard's Analytics tab.
 
 ---
 
 ## 🔒 Privacy
 
 - Your emails are **never sent to any third-party server**
-- Only the email **subject + snippet** (first ~500 chars) is sent to OpenAI
+- Only the email **subject, sender, and the first 2,000 characters of its text** are sent to OpenAI (never attachments)
 - Your OpenAI key is stored in `chrome.storage.local` — only on your machine
 - Gmail tokens are managed by Chrome's identity API
 
@@ -127,8 +133,8 @@ Then in Settings:
 
 Once you're happy with it:
 
-1. `npm run build`
-2. Zip the project folder (excluding `node_modules/`)
+1. `npm run package` (production build, no source maps → `jobtracker.zip`)
+2. Note: `gmail.modify` is a Google *restricted* scope. Without Google's OAuth verification and security assessment, keep the consent screen in **Testing** mode (up to 100 named test users) and publish the listing as **Unlisted**.
 3. Go to [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)
 4. Pay the one-time **$5 developer fee**
 5. Upload the zip → fill in description + screenshots → submit for review

@@ -471,6 +471,17 @@ const CHART_COLORS = {
   review:     '#fad165',
 };
 
+// Four evenly spaced whole-number gridlines: pick the smallest "nice" step whose
+// four intervals cover the data, so axis labels never repeat (e.g. 2, 2, 1, 1, 0).
+function niceAxisMax(max: number): number {
+  const magnitude = Math.pow(10, Math.floor(Math.log10(max / 4)));
+  for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) {
+    const step = Math.ceil(m * magnitude);
+    if (step * 4 >= max) return step * 4;
+  }
+  return Math.ceil(max / 4) * 4;
+}
+
 function getCanvasCtx(id: string): CanvasRenderingContext2D | null {
   const canvas = document.getElementById(id) as HTMLCanvasElement | null;
   if (!canvas) return null;
@@ -512,7 +523,7 @@ function drawLineChart(
   const chartW = w - pad.left - pad.right;
   const chartH = h - pad.top - pad.bottom;
 
-  const maxVal = Math.max(...values, 1);
+  const maxVal = niceAxisMax(Math.max(...values, 1));
   const step = chartW / Math.max(labels.length - 1, 1);
 
   ctx.clearRect(0, 0, w, h);
@@ -676,7 +687,7 @@ function drawBarChart(canvasId: string, emptyId: string, labels: string[], value
   const chartW = w - pad.left - pad.right;
   const chartH = h - pad.top - pad.bottom;
 
-  const maxVal = Math.max(...values, 1);
+  const maxVal = niceAxisMax(Math.max(...values, 1));
   const barW = chartW / labels.length * 0.6;
   const gap = chartW / labels.length;
 
